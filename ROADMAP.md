@@ -23,7 +23,7 @@
 | Categorie | Voltooid | Totaal |
 |-----------|:--------:|:------:|
 | Rename + frontmatter upgrade | 28 | 28 |
-| Content upgrade bestaande skills | 0 | 28 |
+| Content upgrade bestaande skills | 6 | 28 |
 | Nieuwe Syntax skills | 0 | 3 |
 | Nieuwe Core skills | 0 | 4 |
 | Nieuwe Impl skills | 0 | 5 |
@@ -32,7 +32,7 @@
 | Nieuwe Testing skills | 0 | 2 |
 | **TOTAAL v2.0** | **28** | **81** |
 
-**V2 Progress**: ███░░░░░░░░░░░░░░░░░ **35%** — V2.2 Compleet
+**V2 Progress**: ████████░░░░░░░░░░░░ **42%** — V2.4 in progress (6/28 skills upgraded)
 
 ### V2 Fasen
 
@@ -41,7 +41,7 @@
 | V2.1 | Gap analysis valideren | ✅ Compleet |
 | V2.2 | Rename + frontmatter upgrade (28 skills) | ✅ Compleet |
 | V2.3 | Directory herstructurering + 25 nieuwe stubs | ✅ Compleet |
-| V2.4 | Content upgrade bestaande 28 skills (research + rewrite) | ⏳ Gepland |
+| V2.4 | Content upgrade bestaande 28 skills (research + rewrite) | 🔄 6/28 compleet |
 | V2.5 | Nieuwe skills vullen (P0 → P1 → P2 → P3) | ⏳ Gepland |
 | V2.6 | Validatie, README, repo rename, release | ⏳ Gepland |
 
