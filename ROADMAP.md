@@ -40,7 +40,7 @@
 |------|-------------|:------:|
 | V2.1 | Gap analysis valideren | ✅ Compleet |
 | V2.2 | Rename + frontmatter upgrade (28 skills) | ✅ Compleet |
-| V2.3 | Directory herstructurering (ops/, testing/ lagen) + stubs | ⏳ Volgende |
+| V2.3 | Directory herstructurering + 25 nieuwe stubs | ✅ Compleet |
 | V2.4 | Content upgrade bestaande 28 skills (research + rewrite) | ⏳ Gepland |
 | V2.5 | Nieuwe skills vullen (P0 → P1 → P2 → P3) | ⏳ Gepland |
 | V2.6 | Validatie, README, repo rename, release | ⏳ Gepland |
