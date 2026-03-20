@@ -1,10 +1,13 @@
 ---
 name: frappe-impl-customapp
 description: >
-  Use when building Frappe/ERPNext custom apps. Covers app structure,
-  module creation, doctype design, fixtures, patches, and deployment
-  workflows for v14/v15/v16. Keywords: create custom app, new frappe app,
-  bench new-app, app structure, module creation, doctype creation, fixtures.
+  Use when building a custom Frappe app from scratch. Covers bench new-app
+  walkthrough, app structure decisions, adding DocTypes, hooks, patches,
+  fixtures management, development workflow (bench migrate, build,
+  clear-cache), testing, packaging, installing on another site, version
+  management, and app dependencies for v14/v15/v16. Keywords: create custom
+  app, new frappe app, bench new-app, app structure, module creation,
+  doctype creation, fixtures, patches, deployment, packaging.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -12,215 +15,360 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Custom App - Implementation
+# Frappe Custom App - Implementation
 
-This skill helps you determine HOW to build and structure Frappe/ERPNext custom apps. For exact syntax, see `frappe-syntax-customapp`.
+Workflow for building a custom Frappe app from scratch. For exact syntax, see `frappe-syntax-customapp`.
 
-**Version**: v14/v15/v16 compatible (differences noted)
-
----
-
-## Main Decision: What Are You Building?
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ WHAT DO YOU WANT TO CREATE?                                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ ► Completely new Frappe/ERPNext app?                                    │
-│   └─► See: NEW APP WORKFLOW                                             │
-│                                                                         │
-│ ► Extend existing ERPNext functionality?                                │
-│   └─► See: EXTENSION DECISION                                           │
-│                                                                         │
-│ ► Migrate data between fields/DocTypes?                                 │
-│   └─► See: PATCH vs FIXTURE DECISION                                    │
-│                                                                         │
-│ ► Export configuration for deployment?                                  │
-│   └─► See: FIXTURE WORKFLOW                                             │
-│                                                                         │
-│ ► Update existing app to newer Frappe version?                          │
-│   └─► See: VERSION UPGRADE WORKFLOW                                     │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+**Version**: v14/v15/v16 compatible
 
 ---
 
-## Decision 1: Do You Need a Custom App?
+## Main Decision: Do You Need a Custom App?
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ DO YOU ACTUALLY NEED A CUSTOM APP?                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ What changes do you need?                                               │
-│                                                                         │
-│ ► Add fields to existing DocType?                                       │
-│   └─► NO APP NEEDED: Use Custom Field + Property Setter                 │
-│       (Can be exported as fixtures from ANY app)                        │
-│                                                                         │
-│ ► Simple automation/validation?                                         │
-│   └─► NO APP NEEDED: Server Script or Client Script                     │
-│       (Stored in database, no deployment needed)                        │
-│                                                                         │
-│ ► Complex business logic, new DocTypes, or Python code?                 │
-│   └─► YES, CREATE APP: You need controllers, models, and deployment     │
-│                                                                         │
-│ ► Integration with external system?                                     │
-│   └─► USUALLY YES: APIs need whitelisted methods, scheduled sync        │
-│                                                                         │
-│ ► Custom reports with complex queries?                                  │
-│   └─► DEPENDS: Script Report (no app) vs Query Report (app optional)    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+WHAT CHANGES DO YOU NEED?
+|
++-- Add fields to existing DocType?
+|   +-- NO APP NEEDED: Custom Field + Property Setter
+|
++-- Simple automation/validation (<50 lines)?
+|   +-- NO APP NEEDED: Server Script or Client Script
+|
++-- Complex business logic, new DocTypes, or Python code?
+|   +-- YES: Create custom app
+|
++-- Integration with external system (needs imports)?
+|   +-- YES: Custom app REQUIRED (Server Scripts block imports)
+|
++-- Custom reports with complex queries?
+|   +-- Script Report (no app) vs Query Report (app optional)
 ```
 
-**Rule**: Start with the SIMPLEST solution. Server Scripts + Custom Fields solve 70% of customization needs without a custom app.
+**Rule**: ALWAYS start with the simplest solution. Server Scripts + Custom Fields solve 70% of needs without a custom app.
 
 ---
 
-## Decision 2: Extension Strategy
+## Step 1: Create App Structure
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ HOW TO EXTEND ERPNext?                                                  │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ ► Add fields to existing DocType (e.g., Sales Invoice)?                 │
-│   └─► Custom Field (via UI or fixtures)                                 │
-│   └─► Property Setter for behavior changes                              │
-│                                                                         │
-│ ► Modify DocType behavior/logic?                                        │
-│   ├─► v16: Use `extend_doctype_class` hook (PREFERRED)                  │
-│   └─► v14/v15: Use `doc_events` hooks in hooks.py                       │
-│                                                                         │
-│ ► Override Jinja template?                                              │
-│   └─► Copy template to your app's templates/ folder                     │
-│   └─► Register via `jinja.override_template` in hooks.py                │
-│                                                                         │
-│ ► Add new DocType related to existing?                                  │
-│   └─► Create in your app's module                                       │
-│   └─► Link via Link field or Dynamic Link                               │
-│                                                                         │
-│ ► Add new workspace/menu items?                                         │
-│   └─► Create Workspace DocType in your app                              │
-│   └─► Or use `standard_portal_menu_items` hook                          │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```bash
+cd ~/frappe-bench
+bench new-app my_app
+# Prompts: Title, Description, Publisher, Email, License
 ```
 
-> **See**: `references/decision-tree.md` for detailed extension patterns.
+ALWAYS verify immediately:
+```python
+# my_app/my_app/__init__.py MUST have:
+__version__ = "0.0.1"
+```
 
 ---
 
-## Decision 3: Patch vs Fixture
+## Step 2: Configure pyproject.toml (v15+)
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ SHOULD THIS BE A PATCH OR A FIXTURE?                                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ Is it CONFIGURATION that should be the same everywhere?                 │
-│ (Custom Fields, Roles, Workflows, Property Setters)                     │
-│   └─► USE FIXTURE                                                       │
-│                                                                         │
-│ Is it a ONE-TIME data transformation?                                   │
-│ (Migrate old field values, cleanup bad data, populate defaults)         │
-│   └─► USE PATCH                                                         │
-│                                                                         │
-│ Does it need to run BEFORE schema changes?                              │
-│ (Backup data from field that will be deleted)                           │
-│   └─► USE PATCH with [pre_model_sync]                                   │
-│                                                                         │
-│ Does it need to run AFTER schema changes?                               │
-│ (Populate newly added field with calculated values)                     │
-│   └─► USE PATCH with [post_model_sync]                                  │
-│                                                                         │
-│ Is it master data / lookup tables?                                      │
-│ (Categories, Status options, Configuration records)                     │
-│   └─► USE FIXTURE for initial, PATCH for updates                        │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```toml
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "my_app"
+authors = [{ name = "Your Company", email = "dev@example.com" }]
+description = "Your app description"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = [
+    "requests>=2.28.0"   # Only PyPI packages here
+]
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<16.0.0"
+# erpnext = ">=15.0.0,<16.0.0"  # Only if needed
 ```
 
-> **See**: `references/decision-tree.md` for patch timing flowchart.
+**Rule**: NEVER put frappe or erpnext in `[project].dependencies` -- they are NOT on PyPI.
 
 ---
 
-## Decision 4: Module Organization
+## Step 3: Configure hooks.py
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ HOW MANY MODULES DO YOU NEED?                                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ Small app (1-5 DocTypes, single purpose)?                               │
-│   └─► ONE MODULE with app name                                          │
-│       Example: my_app/my_app/ (module "My App")                         │
-│                                                                         │
-│ Medium app (6-15 DocTypes, multiple areas)?                             │
-│   └─► 2-4 MODULES by functional area                                    │
-│       Example: core/, settings/, integrations/                          │
-│                                                                         │
-│ Large app (15+ DocTypes, complex domain)?                               │
-│   └─► MODULES by business domain                                        │
-│       Example: inventory/, sales/, purchasing/, settings/               │
-│                                                                         │
-│ Multi-tenant or vertical solution?                                      │
-│   └─► Consider MULTIPLE APPS instead                                    │
-│       Base app + vertical-specific apps                                 │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+```python
+app_name = "my_app"
+app_title = "My App"
+app_publisher = "Your Company"
+app_description = "Description"
+app_email = "dev@example.com"
+app_license = "MIT"
+
+required_apps = ["frappe"]  # Or ["frappe", "erpnext"]
+
+fixtures = []  # Configured later
 ```
 
-**Rule**: Each DocType belongs to EXACTLY one module. Choose module = where would a user look for this DocType?
+**Rule**: ALWAYS declare `required_apps` with all dependencies.
 
 ---
 
-## Quick Implementation Workflows
+## Step 4: Define Modules
 
-### New App Workflow
-
-```
-1. Create app structure    → bench new-app my_app
-2. Configure pyproject     → Edit pyproject.toml (v15+) or setup.py (v14)
-3. Define modules          → Edit modules.txt
-4. Create DocTypes         → bench --site mysite new-doctype MyDocType
-5. Write controllers       → my_app/doctype/my_doctype/my_doctype.py
-6. Configure hooks         → hooks.py for integration
-7. Export fixtures         → bench --site mysite export-fixtures
-8. Test installation       → bench --site testsite install-app my_app
+```text
+# my_app/my_app/modules.txt
+My App
 ```
 
-> **See**: `references/workflows.md` for detailed steps.
+| App Size | Module Strategy |
+|----------|----------------|
+| 1-5 DocTypes | ONE module with app name |
+| 6-15 DocTypes | 2-4 modules by functional area |
+| 15+ DocTypes | Modules by business domain |
 
-### Patch Workflow
+**Rule**: Each DocType belongs to EXACTLY one module. Module name in `modules.txt` maps to directory: `My Custom App` --> `my_custom_app/`.
 
-```
-1. Plan the migration      → What data moves where?
-2. Choose timing           → [pre_model_sync] or [post_model_sync]
-3. Write patch file        → myapp/patches/v1_0/description.py
-4. Add to patches.txt      → Under correct section
-5. Test locally            → bench --site testsite migrate
-6. Handle errors           → Add rollback logic if needed
-7. Test on copy of prod    → ALWAYS before production
-```
-
-> **See**: `references/workflows.md` for patch patterns.
-
-### Fixture Workflow
-
-```
-1. Configure hooks.py      → Define fixtures list with filters
-2. Make changes via UI     → Custom Fields, Property Setters, etc.
-3. Export fixtures         → bench --site mysite export-fixtures --app my_app
-4. Verify JSON files       → Check my_app/fixtures/*.json
-5. Commit to version control
-6. Test import             → bench --site newsite migrate
+### Adding a Module
+```bash
+mkdir -p my_app/my_app/new_module/doctype
+touch my_app/my_app/new_module/__init__.py
+# Add "New Module" to modules.txt
+bench --site mysite migrate
 ```
 
-> **See**: `references/workflows.md` for fixture strategies.
+---
+
+## Step 5: Install and Create DocTypes
+
+```bash
+# Install app on site
+bench --site mysite install-app my_app
+
+# Create DocType (via UI recommended, or CLI)
+bench --site mysite new-doctype "My Document" --module "My App"
+```
+
+This creates:
+```
+my_app/my_app/doctype/my_document/
++-- my_document.json    # DocType definition
++-- my_document.py      # Controller
++-- my_document.js      # Client script
++-- test_my_document.py # Tests
+```
+
+---
+
+## Step 6: Add Hooks
+
+### doc_events (v14/v15/v16)
+```python
+doc_events = {
+    "Sales Invoice": {
+        "validate": "my_app.events.sales_invoice.validate",
+        "on_submit": "my_app.events.sales_invoice.on_submit"
+    }
+}
+```
+
+### extend_doctype_class (v16 ONLY -- preferred)
+```python
+extend_doctype_class = {
+    "Sales Invoice": "my_app.overrides.sales_invoice.CustomSalesInvoice"
+}
+```
+
+**Rule**: ALWAYS call `super().method()` when overriding lifecycle methods in v16.
+
+### Scheduler Events
+```python
+scheduler_events = {
+    "daily": ["my_app.tasks.daily_cleanup"],
+    "cron": {"0 9 * * 1-5": ["my_app.tasks.morning_report"]}
+}
+```
+
+See `frappe-impl-hooks` and `frappe-impl-scheduler` for complete patterns.
+
+---
+
+## Step 7: Add Patches
+
+### Create Patch File
+```bash
+mkdir -p my_app/my_app/patches/v1_0
+touch my_app/my_app/patches/__init__.py
+touch my_app/my_app/patches/v1_0/__init__.py
+```
+
+```python
+# my_app/my_app/patches/v1_0/populate_defaults.py
+import frappe
+
+def execute():
+    if not frappe.db.has_column("My DocType", "target_field"):
+        return  # Skip if not applicable
+
+    batch_size = 1000
+    offset = 0
+    while True:
+        records = frappe.get_all("My DocType",
+            limit_page_length=batch_size, limit_start=offset)
+        if not records:
+            break
+        for r in records:
+            frappe.db.set_value("My DocType", r.name,
+                "target_field", "default", update_modified=False)
+        frappe.db.commit()
+        offset += batch_size
+```
+
+### Register in patches.txt
+```ini
+[pre_model_sync]
+# Patches that run BEFORE schema changes (backup data from deleted fields)
+
+[post_model_sync]
+# Patches that run AFTER schema changes (populate new fields)
+my_app.patches.v1_0.populate_defaults
+```
+
+**Rules**:
+- ALWAYS check if patch is needed (guard clause)
+- ALWAYS batch process 1000+ records
+- ALWAYS commit after each batch
+- NEVER run untested patches on production
+
+---
+
+## Step 8: Fixtures Management
+
+### Configure in hooks.py
+```python
+fixtures = [
+    {"dt": "Custom Field", "filters": [["module", "=", "My App"]]},
+    {"dt": "Property Setter", "filters": [["module", "=", "My App"]]},
+    {"dt": "Role", "filters": [["name", "in", ["My App User", "My App Manager"]]]},
+    {"dt": "Workflow", "filters": [["document_type", "=", "My DocType"]]},
+    "My Category",  # All records of your own config DocType
+]
+```
+
+### Export and Verify
+```bash
+bench --site mysite export-fixtures --app my_app
+ls my_app/my_app/fixtures/
+# custom_field.json, property_setter.json, etc.
+```
+
+**Rules**:
+- ALWAYS filter fixtures to YOUR app's customizations
+- NEVER include transactional data (invoices, orders)
+- NEVER export without filters for shared DocTypes (Custom Field, Workflow)
+- Fixtures auto-import during `bench migrate`
+
+---
+
+## Step 9: Development Workflow
+
+### Essential Commands
+```bash
+# After schema changes (DocType fields, hooks.py, patches)
+bench --site mysite migrate
+
+# After JS/CSS changes
+bench build --app my_app
+
+# After Python changes (controllers, events)
+bench --site mysite clear-cache
+
+# Full restart (production)
+bench restart
+
+# Watch mode (development)
+bench watch  # Auto-rebuilds on file changes
+```
+
+### Development Cycle
+```
+1. Edit code/DocType
+2. bench --site mysite migrate (if schema changed)
+3. bench build --app my_app (if JS/CSS changed)
+4. bench --site mysite clear-cache (if Python changed)
+5. Test in browser
+6. Repeat
+```
+
+---
+
+## Step 10: Testing the App
+
+```bash
+# Run all tests
+bench --site mysite run-tests --app my_app
+
+# Run specific test
+bench --site mysite run-tests --module my_app.my_module.doctype.my_doctype.test_my_doctype
+
+# Run with verbose output
+bench --site mysite run-tests --app my_app -v
+```
+
+See `frappe-testing-unit` for writing test cases.
+
+---
+
+## Step 11: Packaging for Distribution
+
+### Via Git (standard method)
+```bash
+cd apps/my_app
+git init && git add . && git commit -m "Initial commit"
+git remote add origin https://github.com/org/my_app.git
+git push -u origin main
+```
+
+### Install on Another Site
+```bash
+# On target bench
+bench get-app https://github.com/org/my_app.git
+bench --site target-site install-app my_app
+bench --site target-site migrate
+```
+
+### Version Management
+```python
+# my_app/my_app/__init__.py
+__version__ = "1.0.0"  # Semantic versioning: MAJOR.MINOR.PATCH
+```
+
+| Change Type | Version Bump | Example |
+|-------------|-------------|---------|
+| Breaking changes | MAJOR | 1.x -> 2.0.0 |
+| New features | MINOR | 1.1.x -> 1.2.0 |
+| Bug fixes | PATCH | 1.2.0 -> 1.2.1 |
+
+---
+
+## Step 12: App Dependencies
+
+### Frappe/ERPNext Dependencies
+```python
+# hooks.py
+required_apps = ["frappe", "erpnext"]  # Install order matters
+```
+
+```toml
+# pyproject.toml
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<16.0.0"
+erpnext = ">=15.0.0,<16.0.0"
+```
+
+### Python Package Dependencies
+```toml
+[project]
+dependencies = ["requests>=2.28.0", "pandas>=1.5.0"]
+```
+
+**Rule**: NEVER create circular dependencies between apps.
 
 ---
 
@@ -231,37 +379,34 @@ This skill helps you determine HOW to build and structure Frappe/ERPNext custom 
 | Build config | setup.py | pyproject.toml | pyproject.toml |
 | DocType extension | doc_events | doc_events | `extend_doctype_class` preferred |
 | Python minimum | 3.10 | 3.10 | 3.11 |
-| INI patches | ✅ | ✅ | ✅ |
-| Fixtures format | JSON | JSON | JSON |
+| Patch format | INI sections | INI sections | INI sections |
 
-### v16 Breaking Changes
-
-- **`extend_doctype_class`** hook: Cleaner DocType extension pattern
-- **Data masking**: Field-level privacy configuration available
-- **UUID naming**: New naming rule option for DocTypes
-- **Chrome PDF**: wkhtmltopdf deprecated for PDF generation
+### v16 Breaking Changes to Know
+- `extend_doctype_class` hook: Cleaner extension via mixins
+- Data masking: Field-level privacy configuration
+- UUID naming: New naming rule option
+- Chrome PDF: wkhtmltopdf deprecated
 
 ---
 
-## Critical Implementation Rules
+## Critical Rules Summary
 
-### ✅ ALWAYS
+### ALWAYS
+1. Start with `bench new-app` - NEVER create structure manually
+2. Define `__version__` in `__init__.py`
+3. Use `dynamic = ["version"]` in pyproject.toml
+4. Test patches on database copy before production
+5. Filter fixtures to your app's customizations only
+6. Version your patches (v1_0, v2_0 directories)
+7. Test installation on a fresh site
 
-1. **Start with `bench new-app`** - Never create structure manually
-2. **Define `__version__` in `__init__.py`** - Build will fail without it
-3. **Test patches on database copy** - Never run untested patches on production
-4. **Use batch processing** - Any patch touching 1000+ records needs batching
-5. **Filter fixtures** - Never export all records of a DocType
-6. **Version your patches** - Use v1_0, v2_0 directories for organization
-
-### ❌ NEVER
-
-1. **Put frappe/erpnext in pyproject dependencies** - They're not on PyPI
-2. **Include transactional data in fixtures** - Only configuration!
-3. **Hardcode site-specific values** - Use hooks or settings DocTypes
-4. **Skip `frappe.db.commit()` in large patches** - Memory will explode
-5. **Delete fields without backup patch** - Data loss is irreversible
-6. **Modify core ERPNext files** - Always use hooks or override patterns
+### NEVER
+1. Put frappe/erpnext in `[project].dependencies`
+2. Include transactional data in fixtures
+3. Hardcode site-specific values (use settings DocTypes)
+4. Skip `frappe.db.commit()` in large patches
+5. Delete fields without backup patch
+6. Modify core ERPNext files directly
 
 ---
 
@@ -269,16 +414,19 @@ This skill helps you determine HOW to build and structure Frappe/ERPNext custom 
 
 | File | Contents |
 |------|----------|
-| `references/decision-tree.md` | Complete decision flowcharts |
-| `references/workflows.md` | Step-by-step implementation guides |
-| `references/examples.md` | Complete working examples |
-| `references/anti-patterns.md` | Common mistakes to avoid |
-
----
+| [workflows.md](references/workflows.md) | 8 step-by-step implementation guides |
+| [decision-tree.md](references/decision-tree.md) | Complete decision flowcharts |
+| [examples.md](references/examples.md) | 5 complete working app examples |
+| [anti-patterns.md](references/anti-patterns.md) | Common mistakes to avoid |
 
 ## See Also
 
 - `frappe-syntax-customapp` - Exact syntax reference
-- `frappe-syntax-hooks` - Hooks configuration
+- `frappe-syntax-hooks` - Hooks configuration syntax
 - `frappe-impl-hooks` - Hook implementation patterns
 - `frappe-core-database` - Database operations for patches
+- `frappe-impl-scheduler` - Scheduled task implementation
+- `frappe-ops-bench` - Bench commands reference
+- `frappe-ops-app-lifecycle` - App versioning and release management
+- `frappe-testing-unit` - Writing tests for your app
+- `frappe-testing-cicd` - CI/CD pipeline for app testing

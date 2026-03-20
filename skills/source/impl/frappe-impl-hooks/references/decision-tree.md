@@ -1,4 +1,4 @@
-# Hook Selection Decision Trees
+# Frappe Hook Selection Decision Trees
 
 Complete flowcharts for selecting the right hook type.
 

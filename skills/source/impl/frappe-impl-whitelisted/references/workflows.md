@@ -747,3 +747,201 @@ def process_stripe_event(event):
     else:
         frappe.log_error(f"Unhandled Stripe event: {event_type}", "Stripe Webhook")
 ```
+
+---
+
+## Workflow 8: Background Job API
+
+**Goal**: Trigger a long-running task from the UI that runs asynchronously.
+
+### Step 1: Create the API trigger
+
+```python
+# myapp/api/export.py
+import frappe
+from frappe import _
+
+@frappe.whitelist()
+def start_export(doctype, filters=None):
+    """Trigger background export — returns immediately."""
+    frappe.only_for("System Manager")
+
+    if isinstance(filters, str):
+        filters = frappe.parse_json(filters)
+
+    # Enqueue the heavy work
+    frappe.enqueue(
+        "myapp.tasks.run_export",
+        queue="long",
+        timeout=1500,  # 25 minutes
+        doctype=doctype,
+        filters=filters,
+        user=frappe.session.user
+    )
+
+    return {"status": "queued", "message": _("Export started in background")}
+```
+
+### Step 2: Implement the background task
+
+```python
+# myapp/tasks.py
+import frappe
+
+def run_export(doctype, filters, user):
+    """Background task — runs in worker process."""
+    frappe.set_user(user)  # Set context for permissions
+
+    data = frappe.get_all(doctype, filters=filters, fields=["*"])
+
+    # Create CSV or file
+    csv_content = generate_csv(data)
+
+    # Save as file
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": f"{doctype}_export.csv",
+        "content": csv_content,
+        "is_private": 1
+    })
+    file_doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    # Notify user
+    frappe.publish_realtime(
+        "export_complete",
+        {"file_url": file_doc.file_url},
+        user=user
+    )
+```
+
+### Step 3: Client integration
+
+```javascript
+frappe.call({
+    method: 'myapp.api.export.start_export',
+    args: { doctype: 'Sales Invoice', filters: {docstatus: 1} },
+    callback(r) {
+        frappe.show_alert(__('Export started. You will be notified when complete.'));
+    }
+});
+
+// Listen for completion
+frappe.realtime.on('export_complete', (data) => {
+    frappe.show_alert({
+        message: __('Export complete! <a href="{0}">Download</a>', [data.file_url]),
+        indicator: 'green'
+    });
+});
+```
+
+---
+
+## Workflow 9: Testing APIs with curl/Postman
+
+### Token Authentication (Recommended)
+
+```bash
+# Generate API key in User > API Access > Generate Keys
+# Use token format: api_key:api_secret
+
+# GET request
+curl -H "Authorization: token abc123:xyz789" \
+  "https://site.com/api/method/myapp.api.get_data?param=value"
+
+# POST request
+curl -X POST \
+  -H "Authorization: token abc123:api_secret" \
+  -H "Content-Type: application/json" \
+  -d '{"customer": "CUST-001", "limit": 10}' \
+  "https://site.com/api/method/myapp.api.get_customer_data"
+```
+
+### Session Authentication
+
+```bash
+# Step 1: Login to get session cookie
+curl -c cookies.txt -X POST \
+  "https://site.com/api/method/login" \
+  -d "usr=admin@example.com&pwd=password"
+
+# Step 2: Use cookie for subsequent requests
+curl -b cookies.txt \
+  "https://site.com/api/method/myapp.api.get_data"
+```
+
+### Bearer Token (OAuth)
+
+```bash
+curl -H "Authorization: Bearer your_access_token" \
+  "https://site.com/api/method/myapp.api.get_data"
+```
+
+### Postman Setup
+
+1. Set Authorization: API Key or Bearer Token
+2. Set Content-Type: application/json
+3. For POST: put args in Body as raw JSON
+4. Response is always `{"message": <your_return_value>}`
+
+---
+
+## Workflow 10: Migrating Server Script API to Whitelisted Method
+
+### Step-by-Step
+
+**Step 1: Identify the Server Script**
+```
+Setup > Server Script > [Your Script]
+Note: Script Type, DocType Event or API method name, and the code
+```
+
+**Step 2: Create equivalent Python function**
+```python
+# myapp/api/migrated.py
+import frappe
+from frappe import _
+
+# Was: Server Script "Get Customer Stats" (API type)
+@frappe.whitelist()
+def get_customer_stats(customer):
+    """Migrated from Server Script."""
+    if not frappe.has_permission("Customer", "read", customer):
+        frappe.throw(_("Not permitted"), frappe.PermissionError)
+
+    # Copy logic from Server Script, adapting as needed
+    stats = frappe.db.sql("""...""", customer, as_dict=True)
+    return stats
+```
+
+**Step 3: Update all client calls**
+```javascript
+// Before (Server Script):
+frappe.call({method: 'get_customer_stats', args: {customer: name}});
+
+// After (Whitelisted Method):
+frappe.call({method: 'myapp.api.migrated.get_customer_stats', args: {customer: name}});
+```
+
+**Step 4: Disable the Server Script**
+
+**Step 5: Deploy**
+```bash
+bench --site sitename migrate
+```
+
+---
+
+## Anti-Patterns Quick Reference
+
+| Anti-Pattern | Risk | Correct Approach |
+|--------------|------|-----------------|
+| No permission check | Data exposure | ALWAYS check permissions |
+| SQL string interpolation | SQL injection | Use parameterized queries |
+| `allow_guest` without validation | Arbitrary data creation | Validate ALL input, sanitize |
+| Expose internal errors | Information leak | Log details, generic message |
+| `ignore_permissions` without role check | Permission bypass | `frappe.only_for()` first |
+| `methods=["GET"]` for writes | CSRF/caching issues | Use `methods=["POST"]` |
+| Return all fields | Slow, data leak | Specify fields, paginate |
+| No rate limit on guest API | Abuse, spam | `@rate_limit` (v15+) or cache throttle |
+| Inconsistent error handling | Confusing API | Use frappe exceptions consistently |

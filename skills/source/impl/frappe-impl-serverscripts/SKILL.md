@@ -1,11 +1,12 @@
 ---
 name: frappe-impl-serverscripts
 description: >
-  Use when determining HOW to implement server-side features in ERPNext:
-  document validation, automated calculations, API endpoints, scheduled
-  tasks, permission filtering. Helps choose between server script vs
-  controller. Keywords: how to implement server-side, which script type,
-  build custom API, automate validation, schedule task, filter documents.
+  Use when implementing server-side features via Setup > Server Script:
+  document validation, auto-fill, API endpoints, scheduled tasks,
+  permission queries. Covers sandbox-safe coding, script type selection,
+  testing, migration to controllers. Keywords: how to implement server
+  script, which script type, sandbox limitation, Document Event, API
+  script, Scheduler Event, Permission Query, migrate to controller.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -13,165 +14,124 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Server Scripts - Implementation
+# Server Scripts — Implementation Workflows
 
-This skill helps you determine HOW to implement server-side features. For exact syntax, see `frappe-syntax-serverscripts`.
+Step-by-step workflows for building server-side features without a custom app. For exact syntax, see `frappe-syntax-serverscripts`.
 
-**Version**: v14/v15/v16 compatible
+**Version**: v14/v15/v16 | **v15+ Note**: Server Scripts disabled by default — enable with `bench set-config server_script_enabled true`
 
-## CRITICAL: Sandbox Limitation
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ ⚠️  ALL IMPORTS BLOCKED IN SERVER SCRIPTS                          │
-├─────────────────────────────────────────────────────────────────────┤
-│ import json              → ImportError: __import__ not found       │
-│ from frappe.utils import → ImportError                             │
-│                                                                     │
-│ SOLUTION: Use pre-loaded namespace directly:                       │
-│   frappe.utils.nowdate()      frappe.parse_json(data)              │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-## Main Decision: Server Script vs Controller?
+## CRITICAL: Sandbox Limitations
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│ WHAT DO YOU NEED?                                                 │
-├───────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│ ► No custom app / Quick prototyping                               │
-│   └── Server Script ✓                                             │
-│                                                                   │
-│ ► Import external libraries (requests, pandas, etc.)              │
-│   └── Controller (in custom app)                                  │
-│                                                                   │
-│ ► Complex multi-document transactions                             │
-│   └── Controller (full Python, try/except/rollback)               │
-│                                                                   │
-│ ► Simple validation / auto-fill / notifications                   │
-│   └── Server Script ✓                                             │
-│                                                                   │
-│ ► Create REST API without custom app                              │
-│   └── Server Script API type ✓                                    │
-│                                                                   │
-│ ► Scheduled background job                                        │
-│   └── Server Script Scheduler type ✓ (simple)                     │
-│   └── hooks.py scheduler_events (complex)                         │
-│                                                                   │
-│ ► Dynamic list filtering per user                                 │
-│   └── Server Script Permission Query type ✓                       │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
+ALL IMPORTS BLOCKED — RestrictedPython sandbox
+  import json          → ImportError: __import__ not found
+  from frappe.utils    → ImportError
+  import requests      → ImportError
+
+SOLUTION: Use pre-loaded namespace:
+  frappe.utils.nowdate()        frappe.utils.flt()
+  frappe.parse_json(data)       json.loads() (json IS available)
+  frappe.as_json(obj)           json.dumps()
+  frappe.make_get_request(url)  (replaces requests.get)
 ```
 
-**Rule of thumb**: Server Scripts for no-code/low-code solutions within Frappe's sandbox. Controllers for full Python power.
+**Rule**: If you need `import` statements beyond `json`, ALWAYS use a Controller instead.
 
-## Decision Tree: Which Script Type?
+## Workflow 1: Create a Server Script
+
+1. Enable server scripts: `bench set-config server_script_enabled true`
+2. Navigate to **Setup > Server Script** (or awesomebar: "New Server Script")
+3. Select **Script Type** (see decision tree below)
+4. Configure type-specific settings (DocType, event, API method, cron)
+5. Write script in the editor
+6. Save — script is active immediately
+7. Test by triggering the configured event
+8. Use "Compare Versions" button to diff changes
+
+## Workflow 2: Choose the Script Type
 
 ```
-WHAT DO YOU WANT TO ACHIEVE?
+WHAT DO YOU NEED?
 │
-├─► React to document lifecycle (save/submit/cancel)?
+├── React to document save/submit/cancel?
 │   └── Document Event
-│       └── Which event? See event mapping below
+│       └── Select DocType + Event (Before Save, After Save, etc.)
 │
-├─► Create REST API endpoint?
+├── Create a REST API endpoint?
 │   └── API
-│       ├── Public endpoint? → Allow Guest: Yes
-│       └── Authenticated? → Allow Guest: No
+│       └── Set method name + guest access setting
+│       └── Endpoint: /api/method/{method_name}
 │
-├─► Run task on schedule (daily/hourly)?
+├── Run task on schedule (daily/hourly/cron)?
 │   └── Scheduler Event
-│       └── Define cron pattern
+│       └── Set cron pattern or frequency
 │
-└─► Filter list view per user/role/territory?
+└── Filter list views per user/role?
     └── Permission Query
-        └── Return conditions string for WHERE clause
+        └── Select DocType — set `conditions` variable
 ```
 
-→ See [references/decision-tree.md](references/decision-tree.md) for complete decision tree.
+> See [references/decision-tree.md](references/decision-tree.md) for complete decision tree.
 
-## Event Name Mapping (Document Event)
+## Workflow 3: Document Event — Validation
 
-| UI Name | Internal Hook | Best For |
-|---------|---------------|----------|
-| Before Validate | `before_validate` | Pre-validation setup |
-| **Before Save** | **`validate`** | All validation + auto-calc |
-| After Save | `on_update` | Notifications, audit logs |
-| Before Submit | `before_submit` | Submit-time validation |
-| After Submit | `on_submit` | Post-submit automation |
-| Before Cancel | `before_cancel` | Cancel prevention |
-| After Cancel | `on_cancel` | Cleanup after cancel |
-| After Insert | `after_insert` | Create related docs |
-| Before Delete | `on_trash` | Delete prevention |
+**Goal**: Validate Sales Order before save.
 
-## Implementation Workflows
+**Step 1**: Choose event — "Before Save" maps to `validate` hook.
 
-### Workflow 1: Validation with Conditional Logic
-
-**Scenario**: Validate sales order based on customer credit limit.
+**Step 2**: Write sandbox-safe script:
 
 ```python
-# Configuration:
-#   Type: Document Event
-#   DocType Event: Before Save
-#   Reference DocType: Sales Order
+# Type: Document Event | Event: Before Save | DocType: Sales Order
 
-# Get customer's credit limit
-credit_limit = frappe.db.get_value("Customer", doc.customer, "credit_limit") or 0
+errors = []
 
-# Check outstanding
-outstanding = frappe.db.get_value(
-    "Sales Invoice",
-    filters={"customer": doc.customer, "docstatus": 1, "status": "Unpaid"},
-    fieldname="sum(outstanding_amount)"
-) or 0
+if not doc.customer:
+    errors.append("Customer is required")
 
-# Validate
-total_exposure = outstanding + doc.grand_total
-if credit_limit > 0 and total_exposure > credit_limit:
-    frappe.throw(
-        f"Credit limit exceeded. Limit: {credit_limit}, Exposure: {total_exposure}",
-        title="Credit Limit Error"
-    )
+if doc.delivery_date and doc.delivery_date < frappe.utils.today():
+    errors.append("Delivery date cannot be in the past")
+
+for item in doc.items:
+    if item.qty <= 0:
+        errors.append(f"Row {item.idx}: Quantity must be positive")
+
+if errors:
+    frappe.throw("<br>".join(errors), title="Validation Error")
 ```
 
-### Workflow 2: Auto-Calculate and Auto-Fill
+**Rules**:
+- ALWAYS collect errors and throw once (better UX than multiple throws)
+- NEVER call `doc.save()` in Before Save — framework handles it
+- ALWAYS use `frappe.throw()` — `msgprint` does NOT stop save
 
-**Scenario**: Auto-calculate totals and set derived fields.
+## Workflow 4: Document Event — Auto-Calculate
+
+**Goal**: Auto-calculate totals and set derived fields.
 
 ```python
-# Configuration:
-#   Type: Document Event
-#   DocType Event: Before Save
-#   Reference DocType: Purchase Order
+# Type: Document Event | Event: Before Save | DocType: Purchase Order
 
-# Calculate from child table
 doc.total_qty = sum(item.qty or 0 for item in doc.items)
-doc.total_amount = sum(item.amount or 0 for item in doc.items)
+doc.total_amount = sum((item.qty or 0) * (item.rate or 0) for item in doc.items)
 
-# Set derived fields
 if doc.total_amount > 50000:
     doc.requires_approval = 1
     doc.approval_status = "Pending"
 
-# Auto-fill from linked document
 if doc.supplier and not doc.supplier_name:
     doc.supplier_name = frappe.db.get_value("Supplier", doc.supplier, "supplier_name")
 ```
 
-### Workflow 3: Create Related Document
+**Rule**: ALWAYS modify `doc` fields directly in Before Save — they are automatically persisted.
 
-**Scenario**: Create ToDo when document is inserted.
+## Workflow 5: Document Event — Create Related Document
+
+**Goal**: Create a ToDo when a new Lead is inserted.
 
 ```python
-# Configuration:
-#   Type: Document Event
-#   DocType Event: After Insert
-#   Reference DocType: Lead
+# Type: Document Event | Event: After Insert | DocType: Lead
 
-# Create follow-up task
 frappe.get_doc({
     "doctype": "ToDo",
     "allocated_to": doc.lead_owner or doc.owner,
@@ -183,32 +143,31 @@ frappe.get_doc({
 }).insert(ignore_permissions=True)
 ```
 
-### Workflow 4: Custom API Endpoint
+**Rules**:
+- ALWAYS use After Insert or After Save for creating related docs
+- NEVER create documents in Before Save — `doc.name` may not exist yet
+- ALWAYS use `ignore_permissions=True` for system-generated documents
 
-**Scenario**: Create API to fetch customer dashboard data.
+## Workflow 6: API Endpoint
+
+**Goal**: Create authenticated REST API returning customer data.
 
 ```python
-# Configuration:
-#   Type: API
-#   API Method: get_customer_dashboard
-#   Allow Guest: No
+# Type: API | Method: get_customer_dashboard | Allow Guest: No
 # Endpoint: /api/method/get_customer_dashboard
 
 customer = frappe.form_dict.get("customer")
 if not customer:
     frappe.throw("Parameter 'customer' is required")
 
-# Permission check
+# ALWAYS check permissions
 if not frappe.has_permission("Customer", "read", customer):
     frappe.throw("Access denied", frappe.PermissionError)
 
-# Aggregate data
 orders = frappe.db.count("Sales Order", {"customer": customer, "docstatus": 1})
-revenue = frappe.db.get_value(
-    "Sales Invoice",
+revenue = frappe.db.get_value("Sales Invoice",
     filters={"customer": customer, "docstatus": 1},
-    fieldname="sum(grand_total)"
-) or 0
+    fieldname="sum(grand_total)") or 0
 
 frappe.response["message"] = {
     "customer": customer,
@@ -217,16 +176,20 @@ frappe.response["message"] = {
 }
 ```
 
-### Workflow 5: Scheduled Task
+**Rules**:
+- ALWAYS validate input parameters
+- ALWAYS check permissions (even with Allow Guest: No)
+- ALWAYS cap query limits: `min(frappe.utils.cint(limit), 100)`
+- NEVER expose full documents — return only needed fields
 
-**Scenario**: Daily reminder for overdue invoices.
+## Workflow 7: Scheduler Event
+
+**Goal**: Daily reminder for overdue invoices.
 
 ```python
-# Configuration:
-#   Type: Scheduler Event
-#   Event Frequency: Cron
-#   Cron Format: 0 9 * * *  (daily at 9:00)
+# Type: Scheduler Event | Cron: 0 9 * * * (daily at 9:00)
 
+BATCH_SIZE = 50
 today = frappe.utils.today()
 
 overdue = frappe.get_all("Sales Invoice",
@@ -236,13 +199,11 @@ overdue = frappe.get_all("Sales Invoice",
         "docstatus": 1
     },
     fields=["name", "customer", "owner", "due_date", "grand_total"],
-    limit=100
+    limit=BATCH_SIZE
 )
 
 for inv in overdue:
-    days_overdue = frappe.utils.date_diff(today, inv.due_date)
-    
-    # Create ToDo if not exists
+    days = frappe.utils.date_diff(today, inv.due_date)
     if not frappe.db.exists("ToDo", {
         "reference_type": "Sales Invoice",
         "reference_name": inv.name,
@@ -253,20 +214,24 @@ for inv in overdue:
             "allocated_to": inv.owner,
             "reference_type": "Sales Invoice",
             "reference_name": inv.name,
-            "description": f"Invoice {inv.name} is {days_overdue} days overdue (${inv.grand_total})"
+            "description": f"Invoice {inv.name} is {days} days overdue"
         }).insert(ignore_permissions=True)
 
 frappe.db.commit()  # REQUIRED in scheduler scripts
 ```
 
-### Workflow 6: Permission Query
+**Rules**:
+- ALWAYS add `frappe.db.commit()` at end of scheduler scripts
+- ALWAYS add `limit` to queries — prevent memory exhaustion
+- ALWAYS use `try/except` + `frappe.log_error()` in loops
+- NEVER run scheduler scripts that process unlimited records
 
-**Scenario**: Filter documents by user's territory.
+## Workflow 8: Permission Query
+
+**Goal**: Users see only their territory's customers.
 
 ```python
-# Configuration:
-#   Type: Permission Query
-#   Reference DocType: Customer
+# Type: Permission Query | DocType: Customer
 
 user_territory = frappe.db.get_value("User", user, "territory")
 user_roles = frappe.get_roles(user)
@@ -279,101 +244,64 @@ else:
     conditions = f"`tabCustomer`.owner = {frappe.db.escape(user)}"
 ```
 
-→ See [references/workflows.md](references/workflows.md) for more workflow patterns.
+**Rules**:
+- ALWAYS give System Manager full access (`conditions = ""`)
+- ALWAYS use `frappe.db.escape()` for user input in SQL
+- ALWAYS set `conditions` variable — it is the output
+- Permission Query only affects `frappe.db.get_list`, NOT `frappe.db.get_all`
 
-## Integration: Client Script + Server Script
+## Event Name Mapping
 
-| Client Script Calls | Server Script Provides |
-|---------------------|------------------------|
-| `frappe.call({method: 'api_name'})` | API type script |
-| `frappe.db.get_value()` | Direct DB (no script needed) |
-| `frm.call('method')` | Controller method (not Server Script) |
+| UI Name | Internal Hook | Best For |
+|---------|---------------|----------|
+| Before Validate | `before_validate` | Pre-validation defaults |
+| **Before Save** | **`validate`** | Validation + calculations (MOST COMMON) |
+| After Save | `on_update` | Notifications, audit logs |
+| After Insert | `after_insert` | Create related docs (new only) |
+| Before Submit | `before_submit` | Submit-time validation |
+| After Submit | `on_submit` | Post-submit automation |
+| Before Cancel | `before_cancel` | Cancel prevention |
+| After Cancel | `on_cancel` | Cleanup after cancel |
+| Before Delete | `on_trash` | Delete prevention |
 
-### Combined Pattern
+## Sandbox-Safe API Quick Reference
 
-```javascript
-// CLIENT: Call server API
-frappe.call({
-    method: 'check_credit_limit',
-    args: {
-        customer: frm.doc.customer,
-        amount: frm.doc.grand_total
-    },
-    callback: function(r) {
-        if (!r.message.allowed) {
-            frappe.throw(__('Credit limit exceeded'));
-        }
-    }
-});
-```
+| Need | Use (NOT import) |
+|------|-------------------|
+| Parse JSON | `frappe.parse_json()` or `json.loads()` |
+| Serialize JSON | `frappe.as_json()` or `json.dumps()` |
+| Today's date | `frappe.utils.today()` |
+| Now (datetime) | `frappe.utils.now()` |
+| Add days | `frappe.utils.add_days(date, n)` |
+| Date diff | `frappe.utils.date_diff(d1, d2)` |
+| Float conversion | `frappe.utils.flt(val)` |
+| Int conversion | `frappe.utils.cint(val)` |
+| HTTP GET | `frappe.make_get_request(url)` |
+| HTTP POST | `frappe.make_post_request(url, data)` |
+| Render template | `frappe.render_template(tmpl, ctx)` |
+| Log error | `frappe.log_error(msg, title)` |
+| Send email | `frappe.sendmail(recipients, subject, message)` |
 
-```python
-# SERVER: API script 'check_credit_limit'
-customer = frappe.form_dict.get("customer")
-amount = frappe.utils.flt(frappe.form_dict.get("amount"))
+## When to Migrate to Controller
 
-credit_limit = frappe.db.get_value("Customer", customer, "credit_limit") or 0
-outstanding = frappe.db.get_value(
-    "Sales Invoice",
-    {"customer": customer, "docstatus": 1, "status": "Unpaid"},
-    "sum(outstanding_amount)"
-) or 0
+ALWAYS migrate to a Document Controller when:
+- You need `import` statements (beyond `json`)
+- Script exceeds 100 lines
+- You need try/except with rollback
+- You need `frappe.enqueue()` for background jobs
+- You need to extend an existing ERPNext DocType
+- Multiple scripts on same DocType become hard to manage
 
-frappe.response["message"] = {
-    "allowed": (outstanding + amount) <= credit_limit or credit_limit == 0,
-    "available": max(0, credit_limit - outstanding)
-}
-```
-
-## Checklist: Implementation Steps
-
-### New Server Script Feature
-
-1. **[ ] Determine script type**
-   - Document lifecycle? → Document Event
-   - Custom API? → API
-   - Scheduled job? → Scheduler Event
-   - List filtering? → Permission Query
-
-2. **[ ] Check sandbox limitations**
-   - No imports needed? → Proceed
-   - Need imports? → Use Controller instead
-
-3. **[ ] Implement core logic**
-   - Use `frappe.utils.*` directly
-   - Use `frappe.db.*` for database
-
-4. **[ ] Add validation & error handling**
-   - `frappe.throw()` for user errors
-   - Input validation for API scripts
-
-5. **[ ] Test edge cases**
-   - Empty values (null checks)
-   - Permission scenarios
-   - Large data volumes (add limits)
-
-6. **[ ] Scheduler-specific**
-   - Add `frappe.db.commit()` at end
-   - Add `limit` to queries
-   - Batch process large datasets
-
-## Critical Rules
-
-| Rule | Why |
-|------|-----|
-| NO `import` statements | Sandbox blocks all imports |
-| `frappe.db.commit()` in Scheduler | Changes not auto-committed |
-| NO `doc.save()` in Before Save | Framework handles save |
-| `frappe.throw()` for validation | Stops document operation |
-| Always escape user input in SQL | Prevent SQL injection |
-| Add `limit` to queries | Prevent memory issues |
+**Migration path**: See `frappe-impl-controllers` for controller implementation.
 
 ## Related Skills
 
-- `frappe-syntax-serverscripts` — Exact syntax and method signatures
-- `frappe-errors-serverscripts` — Error handling patterns
-- `frappe-core-database` — frappe.db.* operations
+- `frappe-syntax-serverscripts` — Exact sandbox API reference
+- `frappe-errors-serverscripts` — Error handling and anti-patterns
+- `frappe-core-database` — `frappe.db.*` operations
 - `frappe-core-permissions` — Permission system details
-- `frappe-core-api` — API design patterns
+- `frappe-impl-controllers` — When to migrate from Server Script
 
-→ See [references/examples.md](references/examples.md) for 10+ complete implementation examples.
+> See [references/decision-tree.md](references/decision-tree.md) for complete decision trees.
+> See [references/workflows.md](references/workflows.md) for extended patterns.
+> See [references/examples.md](references/examples.md) for 10+ complete examples.

@@ -6,7 +6,7 @@ Before starting interpretation, verify:
 
 - [ ] User request is captured completely
 - [ ] No obvious typos or misunderstandings
-- [ ] Context is sufficient (which DocTypes, which ERPNext version)
+- [ ] Context is sufficient (which DocTypes, which Frappe version)
 - [ ] If unclear: clarifying questions prepared
 
 ---
@@ -24,6 +24,11 @@ Before starting interpretation, verify:
   - [ ] Workflow/approval
   - [ ] UI customization
   - [ ] Scheduling/automation
+  - [ ] Reporting/analytics
+  - [ ] Website/portal
+  - [ ] File handling
+  - [ ] Deployment/ops
+  - [ ] Testing
 
 ### Subject Identification
 - [ ] Primary DocType(s) identified
@@ -72,8 +77,14 @@ Before starting interpretation, verify:
 - [ ] No complex transaction management needed
 - [ ] No file system access needed
 - [ ] No shell commands needed
-- [ ] → Server Script is eligible (all checked)
-- [ ] → Controller required (any unchecked)
+- [ ] --> Server Script is eligible (all checked)
+- [ ] --> Controller required (any unchecked)
+
+### v16 Considerations
+- [ ] Target version identified (v14, v15, v16, or multi)
+- [ ] extend_doctype_class considered if v16-only
+- [ ] Type annotations considered if v16
+- [ ] Data masking considered for PII fields
 
 ### Mechanism Selection
 - [ ] Primary mechanism selected:
@@ -85,13 +96,11 @@ Before starting interpretation, verify:
   - [ ] Controller
   - [ ] hooks.py configuration
   - [ ] Built-in feature (Workflow, Notification, etc.)
+  - [ ] Report (Script/Query)
+  - [ ] Website template
+  - [ ] Integration pattern
 - [ ] Selection justified with reasoning
 - [ ] Custom app requirement identified (yes/no)
-
-### Additional Mechanisms Needed
-- [ ] Client Script for UI feedback (if applicable)
-- [ ] hooks.py configuration needed (if applicable)
-- [ ] Multiple mechanisms coordinated (if applicable)
 
 ---
 
@@ -124,16 +133,36 @@ Before starting interpretation, verify:
 
 ## Step 5 Checklist: Map to Skills
 
-### Primary Skills
-- [ ] Syntax skill for mechanism
-- [ ] Implementation skill for mechanism
-- [ ] Error handling skill for mechanism
+### Primary Skills (syntax + implementation)
+- [ ] Syntax skill for mechanism (`frappe-syntax-*`)
+- [ ] Implementation skill for mechanism (`frappe-impl-*`)
+- [ ] Error handling skill for mechanism (`frappe-errors-*`)
 
-### Supporting Skills
-- [ ] Database operations (if needed)
-- [ ] Permission handling (if needed)
-- [ ] API patterns (if needed)
-- [ ] Custom app structure (if needed)
+### Core Skills (if needed)
+- [ ] Database operations (`frappe-core-database`)
+- [ ] Permission handling (`frappe-core-permissions`)
+- [ ] API patterns (`frappe-core-api`)
+- [ ] Workflow engine (`frappe-core-workflow`)
+- [ ] Notifications (`frappe-core-notifications`)
+- [ ] File handling (`frappe-core-files`)
+- [ ] Cache operations (`frappe-core-cache`)
+
+### Ops Skills (if needed)
+- [ ] Bench commands (`frappe-ops-bench`)
+- [ ] Deployment (`frappe-ops-deployment`)
+- [ ] Performance (`frappe-ops-performance`)
+- [ ] Backup (`frappe-ops-backup`)
+- [ ] Upgrades (`frappe-ops-upgrades`)
+
+### Testing Skills (if needed)
+- [ ] Unit tests (`frappe-testing-unit`)
+- [ ] CI/CD (`frappe-testing-cicd`)
+
+### Agent Skills (if needed)
+- [ ] Code validation (`frappe-agent-validator`)
+- [ ] Debugging (`frappe-agent-debugger`)
+- [ ] Architecture (`frappe-agent-architect`)
+- [ ] Migration (`frappe-agent-migrator`)
 
 ### Skill Dependencies
 - [ ] Dependencies between skills noted
@@ -151,80 +180,36 @@ Before starting interpretation, verify:
 ### Completeness
 - [ ] All aspects of request addressed
 - [ ] Edge cases considered
-- [ ] Version compatibility explicit
+- [ ] Version compatibility explicit (v14/v15/v16)
 
 ### Actionability
 - [ ] Clear next steps for implementation
-- [ ] Required skills listed
+- [ ] Required frappe-* skills listed from full catalog
 - [ ] Validation criteria defined
 
 ---
 
-## Validation Criteria Checklist
-
-For each specification, define tests for:
-
-### Happy Path
-- [ ] Normal use case works correctly
-- [ ] Expected output/behavior occurs
-
-### Edge Cases
-- [ ] Empty/null values handled
-- [ ] Boundary values handled
-- [ ] Large volumes handled (if applicable)
-
-### Error Cases
-- [ ] Invalid input handled gracefully
-- [ ] External failures handled (if applicable)
-- [ ] User sees appropriate feedback
-
-### Permission Cases
-- [ ] Correct users can perform action
-- [ ] Incorrect users are blocked
-- [ ] Admin override works (if applicable)
-
----
-
-## Common Pitfalls Checklist
-
-Verify the specification avoids these:
-
-### Mechanism Selection Pitfalls
-- [ ] NOT using Server Script when imports are needed
-- [ ] NOT using validate when before_submit is needed
-- [ ] NOT confusing UI event names with hook names
-- [ ] NOT forgetting Client Script for real-time UI
-
-### Data Flow Pitfalls
-- [ ] NOT modifying self after on_update (won't save)
-- [ ] NOT assuming field values are set before validate
-- [ ] NOT forgetting to handle child table changes
-
-### Error Handling Pitfalls
-- [ ] NOT swallowing errors silently
-- [ ] NOT blocking operations unnecessarily
-- [ ] NOT showing technical errors to users
-- [ ] NOT forgetting to log errors
-
-### Version Compatibility Pitfalls
-- [ ] NOT using v16-only features without noting
-- [ ] NOT forgetting scheduler tick differences
-- [ ] NOT using deprecated patterns
-
----
-
-## Quick Reference: Mechanism → Skills
+## Quick Reference: Mechanism --> Skills
 
 | If Mechanism Is... | Then Skills Are... |
 |--------------------|-------------------|
-| Client Script | syntax-clientscripts, impl-clientscripts, errors-clientscripts |
-| Server Script (Doc Event) | syntax-serverscripts, impl-serverscripts, errors-serverscripts |
-| Server Script (API) | syntax-serverscripts, api-patterns, errors-api |
-| Server Script (Scheduler) | syntax-serverscripts, syntax-scheduler, impl-scheduler |
-| Server Script (Permission) | syntax-serverscripts, permissions, errors-permissions |
-| Controller | syntax-controllers, impl-controllers, errors-controllers |
-| Hooks | syntax-hooks, impl-hooks, errors-hooks |
-| Custom App | syntax-customapp, impl-customapp |
-| Jinja Template | syntax-jinja, impl-jinja |
-| Database heavy | + database, errors-database |
-| Whitelisted API | + syntax-whitelisted, impl-whitelisted |
+| Client Script | `frappe-syntax-clientscripts`, `frappe-impl-clientscripts`, `frappe-errors-clientscripts` |
+| Server Script (Doc Event) | `frappe-syntax-serverscripts`, `frappe-impl-serverscripts`, `frappe-errors-serverscripts` |
+| Server Script (API) | `frappe-syntax-serverscripts`, `frappe-core-api`, `frappe-errors-api` |
+| Server Script (Scheduler) | `frappe-syntax-serverscripts`, `frappe-syntax-scheduler`, `frappe-impl-scheduler` |
+| Server Script (Permission) | `frappe-syntax-serverscripts`, `frappe-core-permissions`, `frappe-errors-permissions` |
+| Controller | `frappe-syntax-controllers`, `frappe-impl-controllers`, `frappe-errors-controllers` |
+| Hooks | `frappe-syntax-hooks`, `frappe-impl-hooks`, `frappe-errors-hooks` |
+| Custom App | `frappe-syntax-customapp`, `frappe-impl-customapp`, `frappe-ops-bench` |
+| Jinja Template | `frappe-syntax-jinja`, `frappe-impl-jinja` |
+| Database heavy | + `frappe-core-database`, `frappe-errors-database` |
+| Whitelisted API | + `frappe-syntax-whitelisted`, `frappe-impl-whitelisted` |
+| Workflow | `frappe-core-workflow`, `frappe-impl-workflow` |
+| Reports | `frappe-syntax-reports`, `frappe-impl-reports` |
+| Website | `frappe-impl-website`, `frappe-syntax-jinja` |
+| Integration | `frappe-impl-integrations`, `frappe-impl-customapp` |
+| Notifications | `frappe-core-notifications` |
+| File handling | `frappe-core-files` |
+| Cache/performance | `frappe-core-cache`, `frappe-ops-performance` |
+| Testing | `frappe-testing-unit`, `frappe-testing-cicd` |
+| Deployment | `frappe-ops-deployment`, `frappe-ops-bench` |

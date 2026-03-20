@@ -1,11 +1,13 @@
 ---
 name: frappe-impl-controllers
 description: >
-  Use when determining HOW to implement server-side DocType logic with
-  Frappe Document Controllers: lifecycle hooks, validation patterns,
-  autoname, submittable workflows, controller override. Keywords: how to
-  implement controller, which hook to use, validate vs on_update, override
-  controller, submittable document, autoname pattern, flags system.
+  Use when building Document Controllers in a custom Frappe app:
+  file creation, lifecycle hooks, validation, autoname, submittable
+  workflows, controller override, child table controllers, flags system,
+  migration from hooks.py and Server Scripts. Keywords: how to implement
+  controller, which hook to use, validate vs on_update, override controller,
+  submittable document, autoname, flags, extend_doctype_class, controller
+  testing, child table controller.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -13,223 +15,204 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Controllers - Implementation
+# Document Controllers — Implementation Workflows
 
-This skill helps you determine HOW to implement server-side DocType logic. For exact syntax, see `frappe-syntax-controllers`.
+Step-by-step workflows for building server-side DocType logic with full Python power. For exact syntax, see `frappe-syntax-controllers`.
 
-**Version**: v14/v15/v16 compatible
+**Version**: v14/v15/v16 | **v15+**: Supports auto-generated type annotations
 
-## Main Decision: Controller vs Server Script?
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│ WHAT DO YOU NEED?                                                 │
-├───────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│ ► Import external libraries (requests, pandas, numpy)             │
-│   └── Controller ✓                                                │
-│                                                                   │
-│ ► Complex multi-document transactions with rollback               │
-│   └── Controller ✓                                                │
-│                                                                   │
-│ ► Full Python power (try/except, classes, generators)             │
-│   └── Controller ✓                                                │
-│                                                                   │
-│ ► Extend/override standard ERPNext DocType                        │
-│   └── Controller (override_doctype_class in hooks.py)             │
-│                                                                   │
-│ ► Quick validation without custom app                             │
-│   └── Server Script                                               │
-│                                                                   │
-│ ► Simple auto-fill or calculation                                 │
-│   └── Server Script                                               │
-│                                                                   │
-└───────────────────────────────────────────────────────────────────┘
-```
-
-**Rule**: Controllers for custom apps with full Python power. Server Scripts for quick no-code solutions.
-
-## Decision Tree: Which Hook?
+## Quick Decision: Controller vs Server Script?
 
 ```
-WHAT DO YOU WANT TO DO?
-│
-├─► Validate data or calculate fields before save?
-│   └─► validate
-│       NOTE: Changes to self ARE saved
-│
-├─► Action AFTER save (emails, linked docs, logs)?
-│   └─► on_update
-│       ⚠️ Changes to self are NOT saved! Use db_set instead
-│
-├─► Only for NEW documents?
-│   └─► after_insert
-│
-├─► Only for SUBMIT (docstatus 0→1)?
-│   ├─► Check before submit? → before_submit
-│   └─► Action after submit? → on_submit
-│
-├─► Only for CANCEL (docstatus 1→2)?
-│   ├─► Prevent cancel? → before_cancel
-│   └─► Cleanup after cancel? → on_cancel
-│
-├─► Before DELETE?
-│   └─► on_trash
-│
-├─► Custom document naming?
-│   └─► autoname
-│
-└─► Detect any change (including db_set)?
-    └─► on_change
+NEED full Python (imports, classes, generators)?     → Controller
+NEED external libraries (requests, pandas)?          → Controller
+NEED try/except with rollback?                       → Controller
+NEED frappe.enqueue() for background jobs?           → Controller
+NEED to extend standard ERPNext DocType?             → Controller
+Quick validation without custom app?                 → Server Script
+Simple auto-fill or notification?                    → Server Script
 ```
 
-→ See [references/decision-tree.md](references/decision-tree.md) for complete decision tree with all hooks.
+**Rule**: ALWAYS use Controllers when you need a custom app. ALWAYS use Server Scripts for no-code prototyping.
 
-## CRITICAL: Changes After on_update
+## Workflow 1: Create a New Controller
 
+**Step 1**: Create DocType via Frappe UI or `bench new-doctype`
+
+**Step 2**: File is auto-generated at:
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│ ⚠️  CHANGES TO self AFTER on_update ARE NOT SAVED                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│ ❌ WRONG - This does NOTHING:                                       │
-│    def on_update(self):                                             │
-│        self.status = "Completed"  # NOT SAVED!                      │
-│                                                                     │
-│ ✅ CORRECT - Use db_set:                                            │
-│    def on_update(self):                                             │
-│        frappe.db.set_value(self.doctype, self.name,                 │
-│                           "status", "Completed")                    │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+apps/myapp/myapp/{module}/doctype/{doctype_name}/{doctype_name}.py
 ```
 
-## Hook Comparison: validate vs on_update
+**Step 3**: Implement the controller class:
 
-| Aspect | validate | on_update |
-|--------|----------|-----------|
+```python
+import frappe
+from frappe import _
+from frappe.model.document import Document
+
+class MyDocType(Document):
+    def validate(self):
+        self.validate_dates()
+        self.calculate_totals()
+
+    def validate_dates(self):
+        if self.from_date and self.to_date and self.from_date > self.to_date:
+            frappe.throw(_("From Date cannot be after To Date"))
+
+    def calculate_totals(self):
+        self.total = sum(item.amount for item in self.items)
+```
+
+**Step 4**: Run `bench restart` (or `bench watch` for hot-reload in dev)
+
+**Naming convention**: DocType "Sales Order" → class `SalesOrder`, file `sales_order.py`
+
+## Workflow 2: Choose the Right Hook
+
+```
+WHAT DO YOU WANT?
+├── Validate data / calculate fields before save?
+│   └── validate — changes to self ARE saved
+│
+├── Action AFTER save (emails, linked docs, logs)?
+│   └── on_update — changes to self NOT saved (use db_set)
+│
+├── Only for NEW documents?
+│   └── after_insert
+│
+├── Before/after SUBMIT?
+│   ├── Check before submit → before_submit
+│   └── Ledger entries after → on_submit
+│
+├── Before/after CANCEL?
+│   ├── Prevent cancel → before_cancel
+│   └── Reverse entries → on_cancel
+│
+├── Before DELETE?
+│   └── on_trash (throw to prevent)
+│
+├── Custom document naming?
+│   └── autoname
+│
+└── Detect ANY change (including db_set)?
+    └── on_change
+```
+
+> See [references/decision-tree.md](references/decision-tree.md) for all hooks with execution order.
+
+## CRITICAL: validate vs on_update
+
+| Aspect | `validate` | `on_update` |
+|--------|-----------|-------------|
 | When | Before DB write | After DB write |
-| Changes to self | ✅ Saved | ❌ NOT saved |
-| Can throw error | ✅ Aborts save | ⚠️ Already saved |
+| `self.x = y` saved? | YES | **NO** — use `db_set` |
+| Can abort with throw? | YES | Already saved |
+| `get_doc_before_save()` | Available | Available |
 | Use for | Validation, calculations | Notifications, linked docs |
-| get_doc_before_save() | ✅ Available | ✅ Available |
 
-## Common Implementation Patterns
+```python
+# WRONG — changes in on_update are NOT saved
+def on_update(self):
+    self.status = "Completed"  # LOST!
 
-### Pattern 1: Validation with Error
+# CORRECT — use db_set
+def on_update(self):
+    frappe.db.set_value(self.doctype, self.name, "status", "Completed")
+```
+
+## Workflow 3: Validation with Error Collection
 
 ```python
 def validate(self):
+    errors = []
     if not self.items:
-        frappe.throw(_("At least one item is required"))
-    
+        errors.append(_("At least one item is required"))
+    for item in self.items:
+        if item.qty <= 0:
+            errors.append(_("Row {0}: Qty must be positive").format(item.idx))
     if self.from_date > self.to_date:
-        frappe.throw(_("From Date cannot be after To Date"))
+        errors.append(_("From Date cannot be after To Date"))
+    if errors:
+        frappe.throw("<br>".join(errors))
 ```
 
-### Pattern 2: Auto-Calculate Fields
+## Workflow 4: Detect Field Changes
 
 ```python
 def validate(self):
-    self.total = sum(item.amount for item in self.items)
-    self.tax_amount = self.total * 0.1
-    self.grand_total = self.total + self.tax_amount
-```
-
-### Pattern 3: Detect Field Changes
-
-```python
-def validate(self):
-    old_doc = self.get_doc_before_save()
-    if old_doc and old_doc.status != self.status:
+    old = self.get_doc_before_save()
+    if old and old.status != self.status:
         self.flags.status_changed = True
-        
+        self.status_changed_on = frappe.utils.now()
+
 def on_update(self):
     if self.flags.get('status_changed'):
         self.notify_status_change()
 ```
 
-### Pattern 4: Post-Save Actions
+**Rule**: ALWAYS use `self.flags` to pass data between hooks. NEVER rely on external state.
 
-```python
-def on_update(self):
-    # Update linked document
-    if self.linked_doc:
-        frappe.db.set_value("Other DocType", self.linked_doc, 
-                          "status", "Updated")
-    
-    # Send notification (never fails the save)
-    try:
-        self.send_notification()
-    except Exception:
-        frappe.log_error("Notification failed")
-```
-
-### Pattern 5: Custom Naming
+## Workflow 5: Custom Naming (autoname)
 
 ```python
 from frappe.model.naming import getseries
 
 def autoname(self):
-    # Format: CUST-ABC-001
-    prefix = f"CUST-{self.customer[:3].upper()}-"
+    # Format: PRJ-CUST-2025-001
+    code = (self.customer or "GEN")[:4].upper()
+    year = frappe.utils.getdate(self.start_date or frappe.utils.today()).year
+    prefix = f"PRJ-{code}-{year}-"
     self.name = getseries(prefix, 3)
 ```
 
-→ See [references/workflows.md](references/workflows.md) for more implementation patterns.
-
-## Submittable Documents Workflow
-
-```
-DRAFT (docstatus=0)
-    │
-    ├── save() → validate → on_update
-    │
-    └── submit()
-         │
-         ├── validate
-         ├── before_submit  ← Last chance to abort
-         ├── [DB: docstatus=1]
-         ├── on_update
-         └── on_submit      ← Post-submit actions
-
-SUBMITTED (docstatus=1)
-    │
-    └── cancel()
-         │
-         ├── before_cancel  ← Last chance to abort
-         ├── [DB: docstatus=2]
-         ├── on_cancel      ← Reverse actions
-         └── [check_no_back_links]
+**Alternative — before_naming**:
+```python
+def before_naming(self):
+    if self.is_priority:
+        self.naming_series = "PRIORITY-.#####"
+    else:
+        self.naming_series = "STD-.#####"
 ```
 
-### Submittable Implementation
+## Workflow 6: Submittable Document
+
+```
+DRAFT (docstatus=0) → submit() → SUBMITTED (docstatus=1) → cancel() → CANCELLED (docstatus=2)
+
+submit():  validate → before_submit → [DB: docstatus=1] → on_update → on_submit
+cancel():  before_cancel → [DB: docstatus=2] → on_cancel
+```
 
 ```python
-def before_submit(self):
-    # Validation that only applies on submit
-    if self.total > 50000 and not self.manager_approval:
-        frappe.throw(_("Manager approval required for orders over 50,000"))
+class PurchaseOrder(Document):
+    def validate(self):
+        self.validate_items()
+        self.calculate_totals()
 
-def on_submit(self):
-    # Actions after submit
-    self.update_stock_ledger()
-    self.make_gl_entries()
+    def before_submit(self):
+        # ONLY submit-specific checks here
+        if self.total > 100000 and not self.manager_approval:
+            frappe.throw(_("Manager approval required for POs over 100,000"))
 
-def before_cancel(self):
-    # Prevent cancel if linked docs exist
-    if self.has_linked_invoices():
-        frappe.throw(_("Cannot cancel - linked invoices exist"))
+    def on_submit(self):
+        self.update_ordered_qty()
+        self.create_purchase_receipt_draft()
 
-def on_cancel(self):
-    # Reverse submitted actions
-    self.reverse_stock_ledger()
-    self.reverse_gl_entries()
+    def before_cancel(self):
+        if frappe.db.exists("Purchase Invoice",
+                {"purchase_order": self.name, "docstatus": 1}):
+            frappe.throw(_("Cancel linked invoices first"))
+
+    def on_cancel(self):
+        self.reverse_ordered_qty()
 ```
 
-## Controller Override (hooks.py)
+**Rule**: NEVER duplicate validation between `validate` and `before_submit`. `validate` ALWAYS runs before `before_submit`.
 
-### Method 1: Full Override
+## Workflow 7: Override Standard ERPNext Controller
+
+### Method A: Full Override (hooks.py)
 
 ```python
 # hooks.py
@@ -242,11 +225,11 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
-        super().validate()  # ALWAYS call parent
+        super().validate()  # ALWAYS call parent first
         self.custom_validation()
 ```
 
-### Method 2: Add Event Handler (Safer)
+### Method B: Event Handler (Safer, no class override)
 
 ```python
 # hooks.py
@@ -262,52 +245,101 @@ def validate_sales_invoice(doc, method=None):
         frappe.throw(_("Invalid total"))
 ```
 
-### V16: extend_doctype_class (New)
+### Method C: extend_doctype_class (v16+)
 
 ```python
-# hooks.py (v16+)
+# hooks.py
 extend_doctype_class = {
     "Sales Invoice": "myapp.extends.SalesInvoiceExtend"
 }
 
-# myapp/extends.py - Only methods to add/override
+# myapp/extends.py — Only methods to add/override
 class SalesInvoiceExtend:
     def custom_method(self):
         pass
 ```
 
-## Flags System
+**Rule**: ALWAYS call `super().validate()` in override. NEVER skip parent methods — standard ERPNext logic depends on it.
+
+## Workflow 8: Whitelisted Methods (Client-Callable)
 
 ```python
-# Document-level flags
-doc.flags.ignore_permissions = True   # Bypass permissions
-doc.flags.ignore_validate = True      # Skip validate()
-doc.flags.ignore_mandatory = True     # Skip required fields
+class Quotation(Document):
+    @frappe.whitelist()
+    def apply_discount(self, discount_percent):
+        if discount_percent < 0 or discount_percent > 100:
+            frappe.throw(_("Discount must be 0-100"))
+        self.discount_amount = self.total * (discount_percent / 100)
+        self.grand_total = self.total - self.discount_amount
+        self.save()
+        return {"grand_total": self.grand_total}
+```
+
+Client-side call:
+```javascript
+frm.call('apply_discount', { discount_percent: 10 }).then(r => {
+    frm.reload_doc();
+});
+```
+
+## Workflow 9: Flags System
+
+```python
+# Document-level flags (built-in)
+doc.flags.ignore_permissions = True    # Bypass permission checks
+doc.flags.ignore_validate = True       # Skip validate() hook
+doc.flags.ignore_mandatory = True      # Skip required field check
 
 # Custom flags for inter-hook communication
 def validate(self):
     if self.is_urgent:
         self.flags.needs_notification = True
-        
+
 def on_update(self):
     if self.flags.get('needs_notification'):
         self.notify_team()
-
-# Insert/save with flags
-doc.insert(ignore_permissions=True, ignore_mandatory=True)
-doc.save(ignore_permissions=True)
 ```
+
+## Workflow 10: Testing Controllers
+
+```python
+# tests/test_my_doctype.py
+import frappe
+from frappe.tests.utils import FrappeTestCase
+
+class TestMyDocType(FrappeTestCase):
+    def test_validate_dates(self):
+        doc = frappe.get_doc({
+            "doctype": "My DocType",
+            "from_date": "2025-01-10",
+            "to_date": "2025-01-01"  # Before from_date
+        })
+        self.assertRaises(frappe.ValidationError, doc.insert)
+
+    def test_calculate_totals(self):
+        doc = frappe.get_doc({
+            "doctype": "My DocType",
+            "items": [
+                {"item": "A", "qty": 2, "rate": 100},
+                {"item": "B", "qty": 3, "rate": 50}
+            ]
+        })
+        doc.insert()
+        self.assertEqual(doc.total, 350)
+```
+
+Run: `bench run-tests --module myapp.module.doctype.my_doctype.test_my_doctype`
 
 ## Execution Order Reference
 
-### INSERT (New Document)
+### INSERT
 ```
 before_insert → before_naming → autoname → before_validate →
-validate → before_save → [DB INSERT] → after_insert → 
+validate → before_save → [DB INSERT] → after_insert →
 on_update → on_change
 ```
 
-### SAVE (Existing Document)
+### SAVE (existing)
 ```
 before_validate → validate → before_save → [DB UPDATE] →
 on_update → on_change
@@ -315,27 +347,32 @@ on_update → on_change
 
 ### SUBMIT
 ```
-validate → before_submit → [DB: docstatus=1] → on_update →
-on_submit → on_change
+validate → before_submit → [DB: docstatus=1] →
+on_update → on_submit → on_change
 ```
 
-→ See [references/decision-tree.md](references/decision-tree.md) for all execution orders.
+## Anti-Pattern Quick Check
 
-## Quick Anti-Pattern Check
-
-| ❌ Don't | ✅ Do Instead |
-|----------|---------------|
+| Do NOT | Do Instead |
+|--------|------------|
 | `self.x = y` in on_update | `frappe.db.set_value(...)` |
-| `frappe.db.commit()` in hooks | Let framework handle commits |
-| Heavy operations in validate | Use `frappe.enqueue()` in on_update |
-| `self.save()` in on_update | Causes infinite loop! |
-| Assume hook order across docs | Each doc has its own cycle |
+| `self.save()` in on_update | Causes infinite loop |
+| `frappe.db.commit()` in hooks | Let framework handle |
+| Heavy ops in validate | Use `frappe.enqueue()` in on_update |
+| Skip `super().validate()` | ALWAYS call parent first |
+| `frappe.get_doc()` in loops | Use `frappe.get_cached_doc()` |
+| Hardcoded thresholds | Use Settings DocType |
 
-→ See [references/anti-patterns.md](references/anti-patterns.md) for complete list.
+> See [references/anti-patterns.md](references/anti-patterns.md) for complete list.
 
-## References
+## Related Skills
 
-- [decision-tree.md](references/decision-tree.md) - Complete hook selection with all execution orders
-- [workflows.md](references/workflows.md) - Extended implementation patterns
-- [examples.md](references/examples.md) - Complete working examples
-- [anti-patterns.md](references/anti-patterns.md) - Common mistakes to avoid
+- `frappe-syntax-controllers` — Exact hook signatures and API
+- `frappe-errors-controllers` — Error handling patterns
+- `frappe-impl-serverscripts` — When Server Script suffices
+- `frappe-syntax-hooks` — hooks.py configuration
+- `frappe-core-database` — `frappe.db.*` operations
+
+> See [references/decision-tree.md](references/decision-tree.md) for all hooks.
+> See [references/workflows.md](references/workflows.md) for extended patterns.
+> See [references/examples.md](references/examples.md) for complete working examples.

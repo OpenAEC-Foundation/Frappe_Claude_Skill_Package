@@ -1,4 +1,4 @@
-# Hook Implementation Workflows
+# Frappe Hook Implementation Workflows
 
 Step-by-step implementation patterns for each hook type.
 
@@ -658,3 +658,138 @@ frappe.ui.form.on("Sales Invoice", {
 ```bash
 bench build --app myapp
 ```
+
+---
+
+## Workflow 11: Website Hooks
+
+### Use Case
+Customize portal behavior, add menu items, set up route rules.
+
+### Steps
+
+**Step 1: Add website hooks**
+```python
+# myapp/hooks.py
+
+# Custom portal menu
+portal_menu_items = [
+    {"title": "My Orders", "route": "/my-orders", "role": "Customer"},
+    {"title": "Support", "route": "/support", "role": "Customer"}
+]
+
+# URL routing rules
+website_route_rules = [
+    {"from_route": "/shop/<category>", "to_route": "shop"},
+    {"from_route": "/invoice/<name>", "to_route": "invoice-view"}
+]
+
+# Inject context into all web pages
+update_website_context = "myapp.website.update_context"
+
+# Custom home page per role
+role_home_page = {
+    "Customer": "my-orders",
+    "Supplier": "my-purchase-orders"
+}
+```
+
+**Step 2: Implement context handler**
+```python
+# myapp/website.py
+import frappe
+
+def update_context(context):
+    """Add data to all web pages."""
+    context.company_name = frappe.db.get_single_value(
+        "Website Settings", "company"
+    ) or "My Company"
+```
+
+**Step 3: Deploy**
+```bash
+bench --site sitename migrate
+```
+
+---
+
+## Workflow 12: Session & Auth Hooks
+
+### Use Case
+Execute code on login, logout, or session creation.
+
+### Steps
+
+**Step 1: Add session hooks**
+```python
+# myapp/hooks.py
+on_login = "myapp.auth.on_login"
+on_session_creation = "myapp.auth.on_session_creation"
+on_logout = "myapp.auth.on_logout"
+```
+
+**Step 2: Implement handlers**
+```python
+# myapp/auth.py
+import frappe
+
+def on_login(login_manager):
+    """Runs after successful login."""
+    user = login_manager.user
+    frappe.logger().info(f"User logged in: {user}")
+
+    # Example: enforce IP whitelist for admin
+    if "System Manager" in frappe.get_roles(user):
+        allowed_ips = ["10.0.0.0/8", "192.168.0.0/16"]
+        # Validate IP...
+
+def on_session_creation(login_manager):
+    """Runs when session is created."""
+    pass
+
+def on_logout():
+    """Runs on logout — no arguments."""
+    frappe.logger().info(f"User logged out: {frappe.session.user}")
+```
+
+---
+
+## Workflow 13: Debugging Hooks That Don't Fire
+
+### Checklist
+
+1. **Did you migrate?** `bench --site sitename migrate` — ALWAYS required
+2. **Is the path correct?** The dotted path in hooks.py must match the actual module path
+3. **Is the module importable?** Run `bench --site sitename execute myapp.events.handler`
+4. **Is __init__.py present?** Every directory in the path needs `__init__.py`
+5. **Is the app installed?** Check `bench --site sitename list-apps`
+6. **For scheduler:** Is scheduler enabled? `bench --site sitename scheduler status`
+7. **For scheduler:** Is the worker running? Check `bench --site sitename doctor`
+8. **Cache issue?** `bench --site sitename clear-cache`
+
+### Quick Debug Pattern
+
+```python
+# Add at the top of your handler to verify it fires
+import frappe
+def my_handler(doc, method=None):
+    frappe.logger("myapp").info(f"Hook fired: {doc.doctype} {doc.name}")
+    # ... rest of handler
+```
+
+---
+
+## Anti-Patterns to Avoid (Quick Reference)
+
+| Anti-Pattern | Risk | Correct Approach |
+|--------------|------|-----------------|
+| `frappe.db.commit()` in doc_events | Breaks transaction | Let Frappe commit |
+| Modify `doc` in `on_update` | Changes lost | Use `frappe.db.set_value()` |
+| Scheduler task with args | Silent failure | No args, fetch data inside |
+| Heavy task in default queue | Timeout (5 min) | Use `_long` variant |
+| Missing `super()` in override | Breaks core logic | ALWAYS call `super()` first |
+| `get_all` with permission_query | Not filtered | Use `get_list` instead |
+| Secrets in bootinfo | Exposed in browser | Only public config |
+| Fixtures without filters | Captures all apps | ALWAYS filter by module |
+| `on_change` + `db_set_value` | Infinite loop | Use flags or `on_update` |
+| Multiple apps override same DocType | Last wins (V14/V15) | Use `extend` (V16) |

@@ -26,68 +26,50 @@ if doc.posting_date < getdate(nowdate()):
 ### Target DocType: Sales Invoice
 ### Event: validate (Before Save)
 
----
+### CRITICAL ERRORS (Must Fix)
 
-### 🔴 CRITICAL ERRORS (Must Fix)
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 2 | `from frappe.utils import` - blocked in sandbox | Use `frappe.utils.nowdate()` directly |
+| 2 | 3 | `import json` - blocked in sandbox | Use `frappe.parse_json()` |
 
-| Line | Issue | Fix |
-|------|-------|-----|
-| 2 | `from frappe.utils import` - Import blocked in sandbox | Use `frappe.utils.nowdate()` and `frappe.utils.getdate()` directly |
-| 3 | `import json` - Import blocked in sandbox | Use `frappe.parse_json()` instead |
+### WARNINGS (Should Fix)
 
-### 🟡 WARNINGS (Should Fix)
-
-| Line | Issue | Recommendation |
-|------|-------|----------------|
-| 5 | No null check on `doc.custom_data` | Add: `if doc.custom_data:` before parse |
-| 9 | Generic error message | Include date values in message for clarity |
-
-### 🔵 SUGGESTIONS (Nice to Have)
-
-| Line | Suggestion |
-|------|------------|
-| - | Consider using frappe's `_()` for translatable strings |
-
----
+| # | Line | Issue | Recommendation |
+|---|------|-------|----------------|
+| 1 | 5 | No null check on `doc.custom_data` | Add `if doc.custom_data:` |
+| 2 | 9 | Generic error message | Include date values |
 
 ### Corrected Code
 
 ```python
-# Server Script: Document Event - Before Save on Sales Invoice
-# FIXED: Removed imports, using frappe namespace directly
-
 if doc.posting_date < frappe.utils.getdate(frappe.utils.nowdate()):
     if doc.custom_data:
         data = frappe.parse_json(doc.custom_data)
         if not data.get("allow_backdating"):
-            frappe.throw(f"Backdating not allowed. Posting date {doc.posting_date} is before today.")
+            frappe.throw(f"Backdating not allowed. Date {doc.posting_date} is before today.")
     else:
-        frappe.throw(f"Backdating not allowed. Posting date {doc.posting_date} is before today.")
+        frappe.throw(f"Backdating not allowed. Date {doc.posting_date} is before today.")
 ```
 
-### Version Compatibility
-
-| Version | Status |
-|---------|--------|
-| v14 | ✅ Compatible |
-| v15 | ✅ Compatible |
-| v16 | ✅ Compatible |
+### Referenced Skills
+- frappe-syntax-serverscripts: import rules, doc variable
+- frappe-errors-serverscripts: error message patterns
 ```
 
 ---
 
 ## Example 2: Client Script with Async Issue
 
-### Code Submitted for Validation
+### Code Submitted
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     refresh(frm) {
         let customer_data = frappe.call({
-            method: 'erpnext.selling.doctype.customer.customer.get_customer_details',
-            args: { customer: frm.doc.customer }
+            method: 'frappe.client.get_value',
+            args: { doctype: 'Customer', filters: {name: frm.doc.customer}, fieldname: 'credit_limit' }
         });
-        
         if (customer_data.message.credit_limit > 0) {
             frm.set_value('credit_limit', customer_data.message.credit_limit);
         }
@@ -98,46 +80,33 @@ frappe.ui.form.on('Sales Order', {
 ### Validation Report
 
 ```markdown
-## Code Validation Report
+### CRITICAL ERRORS
 
-### Code Type: Client Script
-### Target DocType: Sales Order
-### Event: refresh
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 3-6 | `frappe.call()` without callback returns undefined | Use callback pattern |
+| 2 | 7-8 | Accessing `.message` on undefined value | Will throw TypeError |
 
----
+### WARNINGS
 
-### 🔴 CRITICAL ERRORS (Must Fix)
-
-| Line | Issue | Fix |
-|------|-------|-----|
-| 3-6 | `frappe.call()` without callback returns undefined | Use callback pattern or async/await |
-| 8-10 | Accessing `.message` on undefined value | Will throw TypeError |
-
-### 🟡 WARNINGS (Should Fix)
-
-| Line | Issue | Recommendation |
-|------|-------|----------------|
-| 3 | Missing check for `frm.doc.customer` | Add null check before API call |
-| 9 | No `refresh_field()` after `set_value()` | Add refresh to update UI |
-
----
+| # | Line | Issue | Recommendation |
+|---|------|-------|----------------|
+| 1 | 3 | Missing check for `frm.doc.customer` | Add null check |
+| 2 | 8 | No `refresh_field()` after `set_value()` | Add refresh |
 
 ### Corrected Code
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     refresh(frm) {
-        // FIXED: Check customer exists before API call
         if (!frm.doc.customer) return;
-        
-        // FIXED: Use callback pattern for async call
+
         frappe.call({
-            method: 'erpnext.selling.doctype.customer.customer.get_customer_details',
-            args: { customer: frm.doc.customer },
+            method: 'frappe.client.get_value',
+            args: { doctype: 'Customer', filters: {name: frm.doc.customer}, fieldname: 'credit_limit' },
             callback: function(r) {
                 if (r.message && r.message.credit_limit > 0) {
                     frm.set_value('credit_limit', r.message.credit_limit);
-                    // FIXED: Refresh field after set_value
                     frm.refresh_field('credit_limit');
                 }
             }
@@ -146,28 +115,22 @@ frappe.ui.form.on('Sales Order', {
 });
 ```
 
-### Version Compatibility
-
-| Version | Status |
-|---------|--------|
-| v14 | ✅ Compatible |
-| v15 | ✅ Compatible |
-| v16 | ✅ Compatible |
+### Referenced Skills
+- frappe-syntax-clientscripts: async patterns
+- frappe-errors-clientscripts: common JS errors
 ```
 
 ---
 
 ## Example 3: Controller with on_update Modification
 
-### Code Submitted for Validation
+### Code Submitted
 
 ```python
-# sales_invoice.py controller override
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 
 class CustomSalesInvoice(SalesInvoice):
     def on_update(self):
-        # Update commission after save
         if self.sales_partner:
             commission = self.grand_total * 0.1
             self.commission_amount = commission
@@ -177,272 +140,131 @@ class CustomSalesInvoice(SalesInvoice):
 ### Validation Report
 
 ```markdown
-## Code Validation Report
+### CRITICAL ERRORS
 
-### Code Type: Controller
-### Target DocType: Sales Invoice
-### Method: on_update
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 7-8 | `self.*` in on_update won't be saved | Use `self.db_set()` |
 
----
+### WARNINGS
 
-### 🔴 CRITICAL ERRORS (Must Fix)
-
-| Line | Issue | Fix |
-|------|-------|-----|
-| 8-9 | Modifying `self.commission_amount` and `self.custom_commission_status` in on_update - changes will NOT be saved | Use `frappe.db.set_value()` or `self.db_set()` |
-
-### 🟡 WARNINGS (Should Fix)
-
-| Line | Issue | Recommendation |
-|------|-------|----------------|
-| 5 | Missing `super().on_update()` call | Add to preserve parent behavior |
-| 7 | Hardcoded commission rate 0.1 | Consider making this configurable |
-
----
+| # | Line | Issue | Recommendation |
+|---|------|-------|----------------|
+| 1 | 4 | Missing `super().on_update()` | Add to preserve parent behavior |
+| 2 | 6 | Hardcoded commission rate | Make configurable |
 
 ### Corrected Code
 
 ```python
-# sales_invoice.py controller override
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 
 class CustomSalesInvoice(SalesInvoice):
     def on_update(self):
-        # FIXED: Call parent on_update first
         super().on_update()
-        
-        # Update commission after save
         if self.sales_partner:
             commission = self.grand_total * 0.1
-            
-            # FIXED: Use db_set for on_update modifications
             self.db_set({
                 "commission_amount": commission,
                 "custom_commission_status": "Calculated"
             })
 ```
 
-### Version Compatibility
-
-| Version | Status |
-|---------|--------|
-| v14 | ✅ Compatible |
-| v15 | ✅ Compatible |
-| v16 | ✅ Compatible |
+### Referenced Skills
+- frappe-syntax-controllers: lifecycle hooks
+- frappe-errors-controllers: on_update pitfall
 ```
 
 ---
 
-## Example 4: Server Script Permission Query
+## Example 4: v16 extend_doctype_class Missing super()
 
-### Code Submitted for Validation
+### Code Submitted
 
 ```python
-# Server Script: Permission Query on Customer
-user = frappe.session.user
+# hooks.py
+extend_doctype_class = {
+    "Sales Invoice": "my_app.overrides.CustomSalesInvoice"
+}
+```
 
-if frappe.db.get_value("User", user, "role_profile_name") == "Sales Person":
-    territories = frappe.get_all("User Permission", 
-        filters={"user": user, "allow": "Territory"},
-        pluck="for_value")
-    
-    if territories:
-        conditions = "territory in (" + ",".join(territories) + ")"
+```python
+# my_app/overrides.py
+class CustomSalesInvoice:
+    def validate(self):
+        self.custom_profit = self.grand_total - self.total_cost
 ```
 
 ### Validation Report
 
 ```markdown
-## Code Validation Report
+### CRITICAL ERRORS
 
-### Code Type: Server Script (Permission Query)
-### Target DocType: Customer
-
----
-
-### 🔴 CRITICAL ERRORS (Must Fix)
-
-| Line | Issue | Fix |
-|------|-------|-----|
-| 9 | SQL injection vulnerability - territories not escaped | Use `frappe.db.escape()` for each value |
-| - | Missing `conditions` variable assignment if user is not Sales Person | Initialize `conditions` at start |
-
-### 🟡 WARNINGS (Should Fix)
-
-| Line | Issue | Recommendation |
-|------|-------|----------------|
-| 3 | Multiple DB calls could be slow | Consider caching or optimizing |
-
-### 🔵 SUGGESTIONS (Nice to Have)
-
-| Line | Suggestion |
-|------|------------|
-| 9 | Use formatted string with proper escaping for clarity |
-
----
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 3 | Missing `super().validate()` in extend_doctype_class mixin | ALWAYS call super() first |
+| 2 | - | `extend_doctype_class` is v16 only | Will fail on v14/v15 |
 
 ### Corrected Code
 
 ```python
-# Server Script: Permission Query on Customer
-# FIXED: Initialize conditions and fix SQL injection
-
-conditions = None  # Default: no additional filter
-user = frappe.session.user
-
-if frappe.db.get_value("User", user, "role_profile_name") == "Sales Person":
-    territories = frappe.get_all("User Permission", 
-        filters={"user": user, "allow": "Territory"},
-        pluck="for_value")
-    
-    if territories:
-        # FIXED: Properly escape each territory value
-        escaped_territories = [frappe.db.escape(t) for t in territories]
-        conditions = "`tabCustomer`.`territory` IN ({})".format(
-            ",".join(escaped_territories)
-        )
-```
-
-### Version Compatibility
-
-| Version | Status |
-|---------|--------|
-| v14 | ✅ Compatible |
-| v15 | ✅ Compatible |
-| v16 | ✅ Compatible |
-```
-
----
-
-## Example 5: hooks.py with Version Issue
-
-### Code Submitted for Validation
-
-```python
-# hooks.py
-app_name = "custom_app"
-
-doc_events = {
-    "Sales Invoice": {
-        "validate": "custom_app.overrides.sales_invoice.validate",
-        "on_submit": "custom_app.overrides.sales_invoice.on_submit"
-    }
-}
-
-extend_doctype_class = {
-    "Sales Invoice": ["custom_app.overrides.sales_invoice_mixin.SalesInvoiceMixin"]
-}
-
-scheduler_events = {
-    "daily": [
-        "custom_app.tasks.daily_report"
-    ]
-}
-```
-
-### Validation Report
-
-```markdown
-## Code Validation Report
-
-### Code Type: hooks.py
-### App: custom_app
-
----
-
-### 🔴 CRITICAL ERRORS (Must Fix)
-
-| Line | Issue | Fix |
-|------|-------|-----|
-| 11-13 | `extend_doctype_class` is v16+ only | Remove if targeting v14/v15, or add version check |
-
-### 🟡 WARNINGS (Should Fix)
-
-| Line | Issue | Recommendation |
-|------|-------|----------------|
-| - | No error handling hooks defined | Consider adding `on_session_creation` for error logging |
-
-### 🔵 SUGGESTIONS (Nice to Have)
-
-| Line | Suggestion |
-|------|------------|
-| - | Add `app_include_js` and `app_include_css` if you have custom assets |
-
----
-
-### Corrected Code (v14/v15 Compatible)
-
-```python
-# hooks.py
-app_name = "custom_app"
-
-doc_events = {
-    "Sales Invoice": {
-        "validate": "custom_app.overrides.sales_invoice.validate",
-        "on_submit": "custom_app.overrides.sales_invoice.on_submit"
-    }
-}
-
-# REMOVED: extend_doctype_class (v16 only)
-# For v14/v15, use override_doctype_class instead:
-override_doctype_class = {
-    "Sales Invoice": "custom_app.overrides.sales_invoice.CustomSalesInvoice"
-}
-
-scheduler_events = {
-    "daily": [
-        "custom_app.tasks.daily_report"
-    ]
-}
-```
-
-### Corrected Code (v16 Only)
-
-```python
-# hooks.py - v16 ONLY
-app_name = "custom_app"
-
-doc_events = {
-    "Sales Invoice": {
-        "validate": "custom_app.overrides.sales_invoice.validate",
-        "on_submit": "custom_app.overrides.sales_invoice.on_submit"
-    }
-}
-
-# v16+ feature - allows multiple apps to extend same DocType
-extend_doctype_class = {
-    "Sales Invoice": ["custom_app.overrides.sales_invoice_mixin.SalesInvoiceMixin"]
-}
-
-scheduler_events = {
-    "daily": [
-        "custom_app.tasks.daily_report"
-    ]
-}
+class CustomSalesInvoice:
+    def validate(self):
+        super().validate()  # MANDATORY in extend_doctype_class
+        self.custom_profit = self.grand_total - self.total_cost
 ```
 
 ### Version Compatibility
 
 | Version | Status | Notes |
 |---------|--------|-------|
-| v14 | ⚠️ Needs fix | Remove `extend_doctype_class` |
-| v15 | ⚠️ Needs fix | Remove `extend_doctype_class` |
-| v16 | ✅ Compatible | Original code works |
+| v14 | FAIL | extend_doctype_class not supported |
+| v15 | FAIL | extend_doctype_class not supported |
+| v16 | PASS (after fix) | super() required |
+
+### Referenced Skills
+- frappe-syntax-hooks: extend_doctype_class syntax
+- frappe-syntax-controllers: v16 mixin pattern
+```
+
+---
+
+## Example 5: Ops Validation - Missing Migrate
+
+### Scenario Submitted
+> "I added scheduler_events to hooks.py and restarted bench, but my scheduled task never runs"
+
+### Validation Report
+
+```markdown
+### CRITICAL ERRORS
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Missing `bench migrate` after hooks.py change | ALWAYS run `bench --site mysite migrate` after editing hooks.py |
+
+### Diagnostic Steps
+
+1. Run `bench --site mysite migrate`
+2. Verify: `bench --site mysite scheduler status` shows "enabled"
+3. Check: Setup > Scheduled Job Type > find your task
+4. Verify: Task shows correct frequency, Stopped = No
+5. Check: Scheduled Job Log for any execution attempts
+
+### Referenced Skills
+- frappe-ops-bench: bench migrate requirement
+- frappe-impl-scheduler: scheduler registration
 ```
 
 ---
 
 ## Example 6: Clean Code (No Issues)
 
-### Code Submitted for Validation
+### Code Submitted
 
 ```python
 # Server Script: Document Event - Before Save on Purchase Order
-# Purpose: Auto-calculate estimated delivery date based on supplier lead time
-
 if doc.supplier:
     supplier = frappe.get_doc("Supplier", doc.supplier)
-    
     if supplier.lead_time_days and doc.transaction_date:
         from_date = frappe.utils.getdate(doc.transaction_date)
         delivery_date = frappe.utils.add_days(from_date, supplier.lead_time_days)
@@ -452,83 +274,71 @@ if doc.supplier:
 ### Validation Report
 
 ```markdown
-## Code Validation Report
+### NO CRITICAL ERRORS
+### NO WARNINGS
 
-### Code Type: Server Script (Document Event)
-### Target DocType: Purchase Order
-### Event: validate (Before Save)
+### SUGGESTIONS
 
----
-
-### ✅ NO CRITICAL ERRORS
-
-### ✅ NO WARNINGS
-
-### 🔵 SUGGESTIONS (Nice to Have)
-
-| Line | Suggestion |
-|------|------------|
-| 5 | Could use `frappe.db.get_value("Supplier", doc.supplier, "lead_time_days")` instead of `get_doc` for better performance since only one field is needed |
-
----
+| # | Line | Suggestion |
+|---|------|------------|
+| 1 | 3 | Use `frappe.db.get_value("Supplier", doc.supplier, "lead_time_days")` for better performance |
 
 ### Code Quality: EXCELLENT
 
-The code:
-- ✅ Uses frappe namespace correctly (no imports)
-- ✅ Uses `doc.` for document access
-- ✅ Has proper null checks
-- ✅ Clear purpose documented in comment
+- Uses frappe namespace correctly (no imports)
+- Uses `doc.` for document access
+- Has proper null checks
+- Clear purpose
 
 ### Version Compatibility
 
 | Version | Status |
 |---------|--------|
-| v14 | ✅ Compatible |
-| v15 | ✅ Compatible |
-| v16 | ✅ Compatible |
+| v14 | Compatible |
+| v15 | Compatible |
+| v16 | Compatible |
 ```
 
 ---
 
-## Quick Validation Patterns
+## Example 7: Security Validation
 
-### Pattern: Detect Import in Server Script
+### Code Submitted
 
-```
-REGEX: ^import |^from .* import
-SEVERITY: FATAL
-MESSAGE: "Server Scripts cannot use import statements. Use frappe namespace directly."
-```
-
-### Pattern: Detect self in Server Script
-
-```
-REGEX: \bself\.\w+
-SEVERITY: FATAL  
-MESSAGE: "Server Scripts use 'doc', not 'self'. Replace 'self.' with 'doc.'"
+```python
+# Whitelisted method
+@frappe.whitelist()
+def search_customers(query):
+    return frappe.db.sql(f"SELECT name FROM tabCustomer WHERE name LIKE '%{query}%'")
 ```
 
-### Pattern: Detect frappe.db in Client Script
+### Validation Report
 
-```
-REGEX: frappe\.db\.(get_value|set_value|sql|get_all|get_list)
-SEVERITY: FATAL
-MESSAGE: "frappe.db.* is server-side only. Use frappe.call() to invoke server methods."
+```markdown
+### CRITICAL ERRORS
+
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 4 | SQL INJECTION - raw user input in SQL string | Use parameterized query |
+| 2 | 4 | No permission check before database access | Add frappe.has_permission() |
+
+### Corrected Code
+
+```python
+@frappe.whitelist()
+def search_customers(query: str) -> list:
+    if not frappe.has_permission("Customer", "read"):
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    return frappe.db.sql(
+        "SELECT name FROM tabCustomer WHERE name LIKE %s",
+        [f"%{query}%"],
+        as_dict=True
+    )
 ```
 
-### Pattern: Detect Async Issue in Client Script
-
-```
-REGEX: (let|const|var)\s+\w+\s*=\s*frappe\.call\s*\((?!.*callback)
-SEVERITY: FATAL
-MESSAGE: "frappe.call() is async. Use callback function or async/await pattern."
-```
-
-### Pattern: Detect on_update self modification
-
-```
-REGEX: def on_update\(self\):[\s\S]*?self\.\w+\s*=
-SEVERITY: FATAL
-MESSAGE: "Modifications to self.* in on_update() are not saved. Use self.db_set() or frappe.db.set_value()."
+### Referenced Skills
+- frappe-core-database: parameterized queries
+- frappe-core-permissions: permission checking
+- frappe-errors-api: security patterns
 ```

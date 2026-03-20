@@ -1,91 +1,55 @@
-# Workflow Patterns: Client Script Implementation (EN)
+# Client Script Implementation Workflows
 
-## Workflow 1: Master-Detail Form
+## Workflow: Master-Detail Form (Auto-populate)
 
-**Use case**: Order form with customer details that auto-populate.
-
-### Step 1: Design
-```
-Customer (link) → customer_name, territory, credit_limit (read-only)
-```
-
-### Step 2: Implementation
+**Use case**: Customer selection auto-fills name, territory, credit limit.
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     setup(frm) {
-        // Mark read-only fields
         frm.set_df_property('customer_name', 'read_only', 1);
         frm.set_df_property('territory', 'read_only', 1);
     },
-    
+
     refresh(frm) {
-        // Show credit indicator
         if (frm.doc.credit_limit) {
             frm.dashboard.add_indicator(
                 __('Credit: {0}', [format_currency(frm.doc.credit_limit)]),
-                'blue'
-            );
+                'blue');
         }
     },
-    
+
     async customer(frm) {
         if (!frm.doc.customer) {
-            frm.set_value({
-                customer_name: '',
-                territory: '',
-                credit_limit: 0
-            });
+            frm.set_value({ customer_name: '', territory: '', credit_limit: 0 });
             return;
         }
-        
         try {
-            let r = await frappe.db.get_value('Customer', frm.doc.customer, 
+            let r = await frappe.db.get_value('Customer', frm.doc.customer,
                 ['customer_name', 'territory', 'credit_limit']);
-            
-            if (r.message) {
-                frm.set_value(r.message);
-            }
+            if (r.message) frm.set_value(r.message);
         } catch (e) {
-            frappe.show_alert({
-                message: __('Could not fetch customer details'),
-                indicator: 'red'
-            });
+            frappe.show_alert({ message: __('Could not fetch customer details'), indicator: 'red' });
         }
     }
 });
 ```
 
----
+## Workflow: Conditional Form Sections
 
-## Workflow 2: Conditional Form Sections
-
-**Use case**: Show different fields based on document type.
-
-### Step 1: Design
-```
-order_type = "Standard" → standard_fields visible
-order_type = "Blanket"  → blanket_fields visible
-order_type = "Maintenance" → maintenance_fields visible
-```
-
-### Step 2: Implementation
+**Use case**: Show different sections based on document type.
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
-    refresh(frm) {
-        frm.trigger('order_type');
-    },
-    
+    refresh(frm) { frm.trigger('order_type'); },
+
     order_type(frm) {
         const type = frm.doc.order_type;
-        
         // Hide all type-specific sections
-        frm.toggle_display('standard_section', false);
-        frm.toggle_display('blanket_section', false);
-        frm.toggle_display('maintenance_section', false);
-        
-        // Show relevant section
+        ['standard_section', 'blanket_section', 'maintenance_section']
+            .forEach(s => frm.toggle_display(s, false));
+
+        // Show relevant section and set required fields
         if (type === 'Standard') {
             frm.toggle_display('standard_section', true);
         } else if (type === 'Blanket') {
@@ -99,96 +63,45 @@ frappe.ui.form.on('Sales Order', {
 });
 ```
 
----
+## Workflow: Tiered Price Calculation
 
-## Workflow 3: Real-time Price Calculation
-
-**Use case**: Calculate price with tiered discounts.
-
-### Step 1: Design
-```
-qty < 10:  standard price
-qty 10-50: 5% discount
-qty > 50:  10% discount
-```
-
-### Step 2: Implementation
+**Use case**: Apply quantity-based discount tiers on child table.
 
 ```javascript
 frappe.ui.form.on('Quotation Item', {
-    item_code(frm, cdt, cdn) {
-        fetch_item_price(frm, cdt, cdn);
+    async item_code(frm, cdt, cdn) {
+        let row = frappe.get_doc(cdt, cdn);
+        if (!row.item_code) return;
+        let r = await frappe.db.get_value('Item Price',
+            { item_code: row.item_code, selling: 1 }, 'price_list_rate');
+        if (r.message) frappe.model.set_value(cdt, cdn, 'rate', r.message.price_list_rate);
     },
-    
+
     qty(frm, cdt, cdn) {
-        apply_discount(frm, cdt, cdn);
+        let row = frappe.get_doc(cdt, cdn);
+        let discount = row.qty >= 50 ? 10 : row.qty >= 10 ? 5 : 0;
+        frappe.model.set_value(cdt, cdn, 'discount_percentage', discount);
         calculate_amount(frm, cdt, cdn);
     },
-    
-    rate(frm, cdt, cdn) {
-        calculate_amount(frm, cdt, cdn);
-    },
-    
-    discount_percentage(frm, cdt, cdn) {
-        calculate_amount(frm, cdt, cdn);
-    }
+
+    rate(frm, cdt, cdn) { calculate_amount(frm, cdt, cdn); },
+    discount_percentage(frm, cdt, cdn) { calculate_amount(frm, cdt, cdn); }
 });
-
-async function fetch_item_price(frm, cdt, cdn) {
-    let row = frappe.get_doc(cdt, cdn);
-    if (!row.item_code) return;
-    
-    let r = await frappe.db.get_value('Item Price', 
-        {item_code: row.item_code, selling: 1},
-        'price_list_rate'
-    );
-    
-    if (r.message) {
-        frappe.model.set_value(cdt, cdn, 'rate', r.message.price_list_rate);
-    }
-}
-
-function apply_discount(frm, cdt, cdn) {
-    let row = frappe.get_doc(cdt, cdn);
-    let discount = 0;
-    
-    if (row.qty >= 50) {
-        discount = 10;
-    } else if (row.qty >= 10) {
-        discount = 5;
-    }
-    
-    frappe.model.set_value(cdt, cdn, 'discount_percentage', discount);
-}
 
 function calculate_amount(frm, cdt, cdn) {
     let row = frappe.get_doc(cdt, cdn);
-    let discount_factor = 1 - (row.discount_percentage || 0) / 100;
-    let amount = (row.qty || 0) * (row.rate || 0) * discount_factor;
-    
-    frappe.model.set_value(cdt, cdn, 'amount', amount);
+    let factor = 1 - (flt(row.discount_percentage) / 100);
+    frappe.model.set_value(cdt, cdn, 'amount', flt(row.qty) * flt(row.rate) * factor);
 }
 ```
 
----
-
-## Workflow 4: Document Creation Wizard
+## Workflow: Document Creation Button
 
 **Use case**: Sales Order → Sales Invoice with one click.
-
-### Step 1: Design
-```
-1. Button "Create Invoice" visible on submitted Sales Order
-2. Click opens confirmation dialog
-3. After confirmation: create invoice, open in new screen
-```
-
-### Step 2: Implementation
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     refresh(frm) {
-        // Button only on submitted, not fully billed
         if (frm.doc.docstatus === 1 && frm.doc.per_billed < 100) {
             frm.add_custom_button(__('Sales Invoice'), () => {
                 create_invoice(frm);
@@ -197,168 +110,146 @@ frappe.ui.form.on('Sales Order', {
     }
 });
 
-function create_invoice(frm) {
-    frappe.confirm(
-        __('Create Sales Invoice from this Sales Order?'),
-        async () => {
-            try {
-                let r = await frappe.call({
-                    method: 'erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice',
-                    args: { source_name: frm.doc.name },
-                    freeze: true,
-                    freeze_message: __('Creating Invoice...')
-                });
-                
-                if (r.message) {
-                    frappe.model.sync(r.message);
-                    frappe.set_route('Form', 'Sales Invoice', r.message.name);
-                }
-            } catch (e) {
-                frappe.msgprint({
-                    title: __('Error'),
-                    message: __('Could not create invoice: {0}', [e.message]),
-                    indicator: 'red'
-                });
-            }
+async function create_invoice(frm) {
+    let confirmed = await new Promise(resolve =>
+        frappe.confirm(__('Create Sales Invoice?'), () => resolve(true), () => resolve(false)));
+    if (!confirmed) return;
+
+    try {
+        let r = await frappe.call({
+            method: 'erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice',
+            args: { source_name: frm.doc.name },
+            freeze: true,
+            freeze_message: __('Creating Invoice...')
+        });
+        if (r.message) {
+            frappe.model.sync(r.message);
+            frappe.set_route('Form', 'Sales Invoice', r.message.name);
         }
-    );
+    } catch (e) {
+        frappe.msgprint({ title: __('Error'), message: e.message, indicator: 'red' });
+    }
 }
 ```
 
----
+## Workflow: Multi-Step Validation
 
-## Workflow 5: Multi-Step Validation
-
-**Use case**: Complex validation with multiple checks.
-
-### Step 1: Design
-```
-1. Check: items present
-2. Check: total > 0
-3. Check: customer not blocked
-4. Check: credit limit OK (server call)
-```
-
-### Step 2: Implementation
+**Use case**: Complex validation with local + server checks.
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     async validate(frm) {
-        // Step 1: Items check
-        if (!frm.doc.items || frm.doc.items.length === 0) {
-            frappe.throw(__('Please add at least one item'));
-        }
-        
-        // Step 2: Total check
-        if (frm.doc.grand_total <= 0) {
-            frappe.throw(__('Order total must be greater than zero'));
-        }
-        
-        // Step 3 & 4: Server validation
+        // Step 1: Local checks (fast)
+        if (!frm.doc.items || frm.doc.items.length === 0)
+            frappe.throw(__('At least one item required'));
+        if (frm.doc.grand_total <= 0)
+            frappe.throw(__('Total must be greater than zero'));
+
+        // Step 2: Server validation (async)
         let r = await frappe.call({
             method: 'myapp.validations.validate_sales_order',
-            args: {
-                customer: frm.doc.customer,
-                amount: frm.doc.grand_total
-            }
+            args: { customer: frm.doc.customer, amount: frm.doc.grand_total }
         });
-        
         if (r.message) {
-            if (r.message.customer_disabled) {
+            if (r.message.customer_disabled)
                 frappe.throw(__('Customer {0} is disabled', [frm.doc.customer]));
-            }
-            if (r.message.credit_exceeded) {
-                frappe.throw(__('Credit limit exceeded by {0}', 
+            if (r.message.credit_exceeded)
+                frappe.throw(__('Credit limit exceeded by {0}',
                     [format_currency(r.message.exceeded_by)]));
-            }
         }
     }
 });
 ```
 
----
-
-## Workflow 6: Auto-populate Child Table
-
-**Use case**: Select template → auto-fill items.
+## Workflow: Auto-Populate Child Table from Template
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     async order_template(frm) {
         if (!frm.doc.order_template) return;
-        
-        // Confirm if items already exist
         if (frm.doc.items && frm.doc.items.length > 0) {
-            let confirmed = await new Promise(resolve => {
-                frappe.confirm(
-                    __('This will replace existing items. Continue?'),
-                    () => resolve(true),
-                    () => resolve(false)
-                );
-            });
-            
-            if (!confirmed) {
-                frm.set_value('order_template', '');
-                return;
-            }
+            let ok = await new Promise(resolve =>
+                frappe.confirm(__('Replace existing items?'),
+                    () => resolve(true), () => resolve(false)));
+            if (!ok) { frm.set_value('order_template', ''); return; }
         }
-        
-        // Fetch template items
-        let template = await frappe.db.get_doc(
-            'Order Template', 
-            frm.doc.order_template
-        );
-        
-        // Clear and fill
+
+        let template = await frappe.db.get_doc('Order Template', frm.doc.order_template);
         frm.clear_table('items');
-        
-        for (let tpl_item of template.items) {
+        for (let item of template.items) {
             frm.add_child('items', {
-                item_code: tpl_item.item_code,
-                qty: tpl_item.qty,
-                rate: tpl_item.rate
+                item_code: item.item_code, qty: item.qty, rate: item.rate
             });
         }
-        
         frm.refresh_field('items');
         frappe.show_alert({
-            message: __('Added {0} items from template', [template.items.length]),
+            message: __('Added {0} items', [template.items.length]),
             indicator: 'green'
         });
     }
 });
 ```
 
----
-
-## Workflow 7: Real-time Collaboration Indicator
-
-**Use case**: Show who is editing the document.
+## Workflow: Bulk Actions on Child Table
 
 ```javascript
-frappe.ui.form.on('Project', {
-    onload(frm) {
+frappe.ui.form.on('Purchase Order', {
+    refresh(frm) {
         if (!frm.is_new()) {
-            // Publish that we're viewing this document
-            frappe.realtime.emit('viewing_document', {
-                doctype: frm.doc.doctype,
-                name: frm.doc.name,
-                user: frappe.session.user
-            });
-            
-            // Listen for others
-            frappe.realtime.on('viewing_document', (data) => {
-                if (data.doctype === frm.doc.doctype && 
-                    data.name === frm.doc.name &&
-                    data.user !== frappe.session.user) {
-                    
-                    frappe.show_alert({
-                        message: __('User {0} is also viewing this document', 
-                            [data.user]),
-                        indicator: 'yellow'
-                    }, 10);
+            frm.add_custom_button(__('Mark Selected as Received'), () => {
+                let selected = frm.get_selected();
+                if (!selected.items || selected.items.length === 0) {
+                    frappe.msgprint(__('Select items first'));
+                    return;
                 }
+                frappe.confirm(__('Mark {0} items as received?', [selected.items.length]), () => {
+                    selected.items.forEach(cdn => {
+                        let row = frappe.get_doc('Purchase Order Item', cdn);
+                        frappe.model.set_value('Purchase Order Item', cdn, {
+                            received_qty: row.qty,
+                            received_date: frappe.datetime.now_date()
+                        });
+                    });
+                    frm.refresh_field('items');
+                    frappe.show_alert({ message: __('Updated'), indicator: 'green' });
+                });
             });
+        }
+    }
+});
+```
+
+## Workflow: Role-Based Tab Visibility
+
+```javascript
+frappe.ui.form.on('Employee Record', {
+    refresh(frm) {
+        if (!frappe.user_roles.includes('HR Manager')) {
+            frm.toggle_display('salary_tab', false);
+            frm.toggle_display('documents_tab', false);
+        }
+    }
+});
+```
+
+## Workflow: Real-time Dashboard in Form
+
+```javascript
+frappe.ui.form.on('Customer', {
+    async refresh(frm) {
+        if (frm.is_new()) return;
+        let stats = await frappe.call({
+            method: 'myapp.api.get_customer_stats',
+            args: { customer: frm.doc.name }
+        });
+        if (stats.message) {
+            frm.dashboard.clear_headline();
+            frm.dashboard.add_indicator(
+                __('Orders: {0}', [stats.message.total_orders]),
+                stats.message.total_orders > 0 ? 'blue' : 'gray');
+            frm.dashboard.add_indicator(
+                __('Revenue: {0}', [format_currency(stats.message.total_revenue)]),
+                'green');
         }
     }
 });

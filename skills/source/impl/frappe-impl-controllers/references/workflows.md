@@ -1,36 +1,29 @@
 # Controller Implementation Workflows
 
-Extended patterns for common implementation scenarios.
+## Workflow 1: Field Validation Patterns
 
-## Workflow 1: Field Validation
-
-### Simple Required Field
-
+### Simple Required
 ```python
 def validate(self):
     if not self.customer:
         frappe.throw(_("Customer is required"))
 ```
 
-### Conditional Required Field
-
+### Conditional Required
 ```python
 def validate(self):
     if self.is_recurring and not self.end_date:
-        frappe.throw(_("End Date is required for recurring documents"))
+        frappe.throw(_("End Date required for recurring documents"))
 ```
 
-### Cross-Field Validation
-
+### Cross-Field
 ```python
 def validate(self):
-    if self.from_date and self.to_date:
-        if self.from_date > self.to_date:
-            frappe.throw(_("From Date cannot be after To Date"))
+    if self.from_date and self.to_date and self.from_date > self.to_date:
+        frappe.throw(_("From Date cannot be after To Date"))
 ```
 
-### Link Field Validation
-
+### Link Field
 ```python
 def validate(self):
     if self.customer:
@@ -39,273 +32,163 @@ def validate(self):
             frappe.throw(_("Customer {0} is disabled").format(self.customer))
 ```
 
-### Child Table Validation
-
+### Child Table
 ```python
 def validate(self):
     if not self.items:
         frappe.throw(_("At least one item is required"))
-    
     for item in self.items:
         if item.qty <= 0:
-            frappe.throw(_("Quantity must be greater than 0 for item {0}").format(item.item_code))
+            frappe.throw(_("Row {0}: Qty must be positive").format(item.idx))
 ```
 
 ## Workflow 2: Auto-Calculations
 
-### Sum Child Table
-
-```python
-def validate(self):
-    self.total = sum(item.amount for item in self.items)
-    self.total_qty = sum(item.qty for item in self.items)
-```
-
-### Calculate with Tax
-
-```python
-def validate(self):
-    self.net_total = sum(item.amount for item in self.items)
-    self.tax_amount = self.net_total * (self.tax_rate / 100)
-    self.grand_total = self.net_total + self.tax_amount
-```
-
-### Calculate Child Row Values
-
+### Child Table Totals
 ```python
 def validate(self):
     for item in self.items:
         item.amount = item.qty * item.rate
         item.net_amount = item.amount - (item.discount_amount or 0)
+    self.net_total = sum(item.net_amount for item in self.items)
+    self.tax_amount = self.net_total * (self.tax_rate / 100)
+    self.grand_total = self.net_total + self.tax_amount
 ```
 
 ### Running Totals
-
 ```python
 def validate(self):
-    running_total = 0
+    running = 0
     for item in self.items:
-        running_total += item.amount
-        item.running_total = running_total
+        running += item.amount
+        item.running_total = running
 ```
 
 ## Workflow 3: Change Detection
 
-### Detect Specific Field Change
-
+### Detect and Flag
 ```python
+TRACKED = ['status', 'priority', 'assigned_to']
+
 def validate(self):
-    old_doc = self.get_doc_before_save()
-    if old_doc and old_doc.status != self.status:
-        self.status_changed_on = frappe.utils.now()
-        self.flags.status_changed = True
-```
-
-### Track Multiple Fields
-
-```python
-def validate(self):
-    old_doc = self.get_doc_before_save()
-    if not old_doc:
-        return  # New document
-    
-    changed_fields = []
-    for field in ['status', 'priority', 'assigned_to']:
-        if getattr(old_doc, field) != getattr(self, field):
-            changed_fields.append(field)
-    
-    if changed_fields:
-        self.flags.changed_fields = changed_fields
-```
-
-### Log Changes
-
-```python
-def on_update(self):
-    old_doc = self.get_doc_before_save()
-    if not old_doc:
+    old = self.get_doc_before_save()
+    if not old:
         return
-    
+    changed = [f for f in TRACKED if getattr(old, f) != getattr(self, f)]
+    if changed:
+        self.flags.changed_fields = changed
+
+def on_update(self):
+    if not self.flags.get('changed_fields'):
+        return
     changes = []
-    for field in ['status', 'priority']:
-        old_val = getattr(old_doc, field)
-        new_val = getattr(self, field)
-        if old_val != new_val:
-            changes.append(f"{field}: {old_val} → {new_val}")
-    
-    if changes:
-        self.add_comment("Edit", "\n".join(changes))
+    old = self.get_doc_before_save()
+    for field in self.flags.changed_fields:
+        changes.append(f"{field}: {getattr(old, field)} -> {getattr(self, field)}")
+    self.add_comment("Edit", "<br>".join(changes))
 ```
 
-## Workflow 4: Notifications
+## Workflow 4: Post-Save Notifications
 
 ### Email on Status Change
-
 ```python
 def on_update(self):
-    old_doc = self.get_doc_before_save()
-    if old_doc and old_doc.status != self.status:
-        self.send_status_notification()
-
-def send_status_notification(self):
-    frappe.sendmail(
-        recipients=[self.owner],
-        subject=f"{self.doctype} {self.name} status changed to {self.status}",
-        message=f"Your document status has been updated to {self.status}."
-    )
+    old = self.get_doc_before_save()
+    if old and old.status != self.status:
+        frappe.sendmail(
+            recipients=[self.owner],
+            subject=f"{self.doctype} {self.name}: {self.status}",
+            message=f"Status changed to {self.status}.")
 ```
 
-### Background Email (Non-blocking)
-
+### Background Email (Non-Blocking)
 ```python
 def on_update(self):
     if self.flags.get('status_changed'):
         frappe.enqueue(
             'myapp.notifications.send_status_email',
-            queue='short',
-            doc_name=self.name,
-            doctype=self.doctype
-        )
+            queue='short', doc_name=self.name, doctype=self.doctype)
 ```
 
 ## Workflow 5: Linked Documents
 
-### Update Parent on Child Change
-
-```python
-# In child document controller
-def on_update(self):
-    if self.parent and self.parenttype:
-        parent_doc = frappe.get_doc(self.parenttype, self.parent)
-        parent_doc.run_method('update_totals')
-        parent_doc.save()
-```
-
-### Create Related Document
-
+### Create Related Document on Insert
 ```python
 def after_insert(self):
-    # Create Task when Project is created
-    task = frappe.get_doc({
+    frappe.get_doc({
         "doctype": "Task",
-        "subject": f"Initial setup for {self.name}",
+        "subject": f"Follow up: {self.name}",
         "project": self.name,
         "status": "Open"
-    })
-    task.insert(ignore_permissions=True)
+    }).insert(ignore_permissions=True)
 ```
 
 ### Sync Status to Linked Docs
-
 ```python
 def on_update(self):
-    old_doc = self.get_doc_before_save()
-    if old_doc and old_doc.status != self.status:
-        # Update all linked documents
-        linked_docs = frappe.get_all(
-            "Related DocType",
-            filters={"parent_doc": self.name},
-            pluck="name"
-        )
-        for doc_name in linked_docs:
-            frappe.db.set_value("Related DocType", doc_name, 
-                              "parent_status", self.status)
+    old = self.get_doc_before_save()
+    if old and old.status != self.status:
+        linked = frappe.get_all("Child DocType",
+            filters={"parent_ref": self.name}, pluck="name")
+        for name in linked:
+            frappe.db.set_value("Child DocType", name,
+                "parent_status", self.status)
 ```
 
 ## Workflow 6: Custom Naming
 
 ### Prefix Based on Field
-
 ```python
 from frappe.model.naming import getseries
 
 def autoname(self):
-    # P-CUST-001 or P-SUPP-001
-    type_prefix = "CUST" if self.party_type == "Customer" else "SUPP"
-    prefix = f"P-{type_prefix}-"
-    self.name = getseries(prefix, 3)
+    prefix = "CUST" if self.party_type == "Customer" else "SUPP"
+    self.name = getseries(f"P-{prefix}-", 3)  # P-CUST-001
 ```
 
-### Date-Based Naming
-
+### Date-Based
 ```python
 def autoname(self):
     year = frappe.utils.getdate(self.posting_date).year
-    prefix = f"INV-{year}-"
-    self.name = getseries(prefix, 5)  # INV-2025-00001
+    self.name = getseries(f"INV-{year}-", 5)  # INV-2025-00001
 ```
 
-### Name from Multiple Fields
-
-```python
-def autoname(self):
-    # Format: CUSTOMER-ITEM-001
-    customer_code = self.customer[:3].upper()
-    item_code = self.item[:3].upper()
-    prefix = f"{customer_code}-{item_code}-"
-    self.name = getseries(prefix, 3)
-```
-
-### Conditional Naming Series
-
+### Conditional Series
 ```python
 def before_naming(self):
-    if self.is_priority:
-        self.naming_series = "PRIORITY-.#####"
-    else:
-        self.naming_series = "STD-.#####"
+    self.naming_series = "PRIORITY-.#####" if self.is_priority else "STD-.#####"
 ```
 
 ## Workflow 7: Submittable Documents
-
-### Complete Submittable Implementation
 
 ```python
 class PurchaseOrder(Document):
     def validate(self):
         self.validate_items()
         self.calculate_totals()
-    
-    def validate_items(self):
-        if not self.items:
-            frappe.throw(_("Items are required"))
-    
-    def calculate_totals(self):
-        self.total = sum(item.amount for item in self.items)
-    
+
     def before_submit(self):
-        # Validations only needed at submit time
         if self.total > 100000 and not self.manager_approval:
-            frappe.throw(_("Manager approval required for POs over 100,000"))
-        
-        if not self.supplier_quotation:
-            frappe.throw(_("Supplier Quotation reference is required"))
-    
+            frappe.throw(_("Approval required for POs over 100,000"))
+
     def on_submit(self):
-        # Actions that happen on submit
         self.update_ordered_qty()
-        self.create_purchase_receipt_draft()
-    
+
     def before_cancel(self):
-        # Prevent cancel if conditions not met
         if self.has_linked_invoices():
-            frappe.throw(_("Cannot cancel - linked invoices exist"))
-    
+            frappe.throw(_("Cancel linked invoices first"))
+
     def on_cancel(self):
-        # Reverse submit actions
         self.reverse_ordered_qty()
-    
+
     def has_linked_invoices(self):
-        return frappe.db.exists("Purchase Invoice", {
-            "purchase_order": self.name,
-            "docstatus": 1
-        })
+        return frappe.db.exists("Purchase Invoice",
+            {"purchase_order": self.name, "docstatus": 1})
 ```
 
 ## Workflow 8: Controller Override
 
-### Override with Custom Validation
-
+### Full Override
 ```python
 # hooks.py
 override_doctype_class = {
@@ -317,28 +200,11 @@ from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
-        # ALWAYS call parent first
-        super().validate()
-        
-        # Then add custom logic
-        self.validate_credit_limit()
-        self.apply_custom_discounts()
-    
-    def validate_credit_limit(self):
-        if not self.customer:
-            return
-        
-        credit_limit = frappe.db.get_value("Customer", self.customer, "credit_limit")
-        if credit_limit and self.outstanding_amount > credit_limit:
-            frappe.throw(_("Credit limit exceeded"))
-    
-    def apply_custom_discounts(self):
-        # Custom discount logic
-        pass
+        super().validate()  # ALWAYS call parent
+        self.apply_loyalty_discount()
 ```
 
-### Add Method Without Override
-
+### Event Handler (No Override)
 ```python
 # hooks.py
 doc_events = {
@@ -350,78 +216,70 @@ doc_events = {
 
 # myapp/events.py
 def si_validate(doc, method=None):
-    """Additional validation for Sales Invoice"""
     validate_territory_discount(doc)
-
-def si_on_submit(doc, method=None):
-    """Additional actions on submit"""
-    create_commission_record(doc)
-
-def validate_territory_discount(doc):
-    # Custom logic
-    pass
-
-def create_commission_record(doc):
-    # Custom logic
-    pass
 ```
 
 ## Workflow 9: Background Jobs
-
-### Queue Heavy Operations
 
 ```python
 def on_update(self):
     if self.requires_heavy_processing():
         frappe.enqueue(
             'myapp.tasks.process_document',
-            queue='long',
-            timeout=600,
-            doc_name=self.name
-        )
+            queue='long', timeout=600,
+            doc_name=self.name)
 
 # myapp/tasks.py
 def process_document(doc_name):
     doc = frappe.get_doc("MyDocType", doc_name)
-    # Heavy processing here
-    doc.processed = 1
-    doc.db_update()
+    # Heavy processing
+    doc.db_set("processed", 1)
+    frappe.db.commit()
 ```
 
-### Queue with Deduplication
-
+### With Deduplication (v15+)
 ```python
-def on_update(self):
-    frappe.enqueue(
-        'myapp.tasks.sync_to_external',
-        queue='default',
-        job_id=f"sync_{self.doctype}_{self.name}",  # v15+ job_id, v14 job_name
-        doc_name=self.name,
-        deduplicate=True
-    )
+frappe.enqueue(
+    'myapp.tasks.sync_external',
+    queue='default',
+    job_id=f"sync_{self.name}",
+    deduplicate=True,
+    doc_name=self.name)
 ```
 
 ## Workflow 10: Permissions in Controller
 
-### Check Permission Before Action
-
+### Check Before Action
 ```python
 def on_submit(self):
     if self.grand_total > 50000:
-        if not frappe.has_permission(self.doctype, "submit", 
-                                    user=frappe.session.user):
-            frappe.throw(_("Not permitted to submit high-value documents"))
+        if not frappe.has_permission(self.doctype, "submit"):
+            frappe.throw(_("Not permitted for high-value docs"))
 ```
 
-### Bypass Permissions (Use Carefully)
-
+### Bypass for System Operations
 ```python
 def after_insert(self):
-    # Create system document regardless of user permissions
-    task = frappe.get_doc({
-        "doctype": "Task",
-        "subject": f"Follow up on {self.name}"
-    })
+    task = frappe.get_doc({"doctype": "Task", "subject": f"Follow up: {self.name}"})
     task.flags.ignore_permissions = True
     task.insert()
+```
+
+## Workflow 11: Type Annotations (v15+)
+
+Enable in hooks.py:
+```python
+export_python_type_annotations = True
+```
+
+Controller gains auto-generated types:
+```python
+class Person(Document):
+    # begin: auto-generated types
+    from typing import TYPE_CHECKING
+    if TYPE_CHECKING:
+        from frappe.types import DF
+        first_name: DF.Data
+        last_name: DF.Data
+    # end: auto-generated types
 ```

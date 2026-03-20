@@ -1,4 +1,4 @@
-# Hook Examples
+# Frappe Hook Examples
 
 Complete working code examples for common hook scenarios.
 

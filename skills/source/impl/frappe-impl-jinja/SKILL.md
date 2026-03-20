@@ -1,11 +1,14 @@
 ---
 name: frappe-impl-jinja
 description: >
-  Use when determining HOW to implement Jinja templates in ERPNext/Frappe:
-  Print Formats, Email Templates, Portal Pages, custom Jinja methods.
-  Covers template type selection, context variables, styling, and V16
-  Chrome PDF rendering. Keywords: create print format, email template,
-  portal page, pdf template, invoice template, report template.
+  Use when building Jinja templates in Frappe: Print Formats, Email
+  Templates, Notification templates, Portal Pages, and custom Jinja
+  methods. Covers template creation workflows, child table handling,
+  conditional sections, styling, multi-language support, and debugging.
+  Prevents N+1 queries, wrong formatting, and Report Print confusion.
+  Keywords: create print format, email template, portal page, pdf
+  template, invoice template, jinja methods, notification template,
+  web page template, print format styling.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -13,466 +16,457 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Jinja Templates - Implementation
+# Frappe Jinja Templates Implementation Workflow
 
-This skill helps you determine HOW to implement Jinja templates. For exact syntax, see `frappe-syntax-jinja`.
+Step-by-step workflows for building Jinja templates. For syntax reference, see `frappe-syntax-jinja`.
 
-**Version**: v14/v15/v16 compatible (with V16-specific features noted)
+**Version**: v14/v15/v16 (V16 Chrome PDF noted)
 
-## Main Decision: What Are You Trying to Create?
+---
+
+## Master Decision: What Are You Creating?
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ WHAT DO YOU WANT TO CREATE?                                             │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ ► Printable document (invoice, PO, report)?                             │
-│   ├── Standard DocType → Print Format (Jinja)                           │
-│   └── Query/Script Report → Report Print Format (JavaScript!)           │
-│                                                                         │
-│ ► Automated email with dynamic content?                                 │
-│   └── Email Template (Jinja)                                            │
-│                                                                         │
-│ ► Customer-facing web page?                                             │
-│   └── Portal Page (www/*.html + *.py)                                   │
-│                                                                         │
-│ ► Reusable template functions/filters?                                  │
-│   └── Custom jenv methods in hooks.py                                   │
-│                                                                         │
-│ ► Notification content?                                                 │
-│   └── Notification Template (uses Jinja syntax)                         │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-
-⚠️ CRITICAL: Report Print Formats use JAVASCRIPT templating, NOT Jinja!
-   - Jinja: {{ variable }}
-   - JS Report: {%= variable %}
+WHAT IS YOUR OUTPUT?
+│
+├─► Printable PDF (invoice, PO, report)?
+│   ├─► Standard DocType → Print Format (Jinja)
+│   └─► Query/Script Report → Report Print Format (JAVASCRIPT!)
+│       ⚠️ Uses {%= %} NOT {{ }}
+│
+├─► Automated email with dynamic content?
+│   └─► Email Template (Jinja, linked to DocType)
+│
+├─► System notification?
+│   └─► Notification (Setup > Notification, uses Jinja)
+│
+├─► Customer-facing web page?
+│   └─► Portal Page (myapp/www/*.html + *.py)
+│
+└─► Reusable template functions/filters?
+    └─► Custom jenv methods in hooks.py
 ```
 
 ---
 
-## Decision Tree: Print Format Type
+## Workflow 1: Create a Print Format
 
-```
-WHAT ARE YOU PRINTING?
-│
-├─► Standard DocType (Invoice, PO, Quotation)?
-│   │
-│   │ WHERE TO CREATE?
-│   ├─► Quick/simple format → Print Format Builder (Setup > Print)
-│   │   - Drag-drop interface
-│   │   - Limited customization
-│   │
-│   └─► Complex layout needed → Custom HTML Print Format
-│       - Full Jinja control
-│       - Custom CSS styling
-│       - Dynamic logic
-│
-├─► Query Report or Script Report?
-│   └─► Report Print Format (JAVASCRIPT template!)
-│       ⚠️ NOT Jinja! Uses {%= %} and {% %}
-│
-└─► Letter or standalone document?
-    └─► Letter Head + Print Format combination
-```
-
----
-
-## Decision Tree: Where to Store Template
-
-```
-IS THIS A ONE-OFF OR REUSABLE?
-│
-├─► Site-specific, managed via UI?
-│   └─► Create via Setup > Print Format / Email Template
-│       - Stored in database
-│       - Easy to edit without code
-│
-├─► Part of your custom app?
-│   │
-│   │ WHAT TYPE?
-│   ├─► Print Format → myapp/fixtures or db records
-│   │
-│   ├─► Portal Page → myapp/www/pagename/
-│   │   - index.html (template)
-│   │   - index.py (context)
-│   │
-│   └─► Custom methods/filters → myapp/jinja/
-│       - Registered via hooks.py jenv
-│
-└─► Template for multiple sites?
-    └─► Include in app, export as fixture
-```
-
----
-
-## Implementation Workflow: Print Format
-
-### Step 1: Create via UI (Recommended Start)
+### Step 1: Create via UI
 
 ```
 Setup > Printing > Print Format > New
+- Name: My Invoice Format
 - DocType: Sales Invoice
 - Module: Accounts
-- Standard: No (Custom)
+- Standard: No (custom)
 - Print Format Type: Jinja
 ```
 
-### Step 2: Basic Template Structure
+### Step 2: Write the Template
 
 ```jinja
-{# ALWAYS include styles at top #}
 <style>
-    .print-format { font-family: Arial, sans-serif; }
-    .header { background: #f5f5f5; padding: 15px; }
-    .table { width: 100%; border-collapse: collapse; }
+    .print-format { font-family: Arial, sans-serif; font-size: 11px; }
+    .header { margin-bottom: 20px; }
+    .table { width: 100%; border-collapse: collapse; margin: 20px 0; }
     .table th, .table td { border: 1px solid #ddd; padding: 8px; }
+    .table th { background: #f0f0f0; }
     .text-right { text-align: right; }
-    .footer { margin-top: 30px; border-top: 1px solid #ddd; }
 </style>
 
-{# Document header #}
 <div class="header">
     <h1>{{ doc.select_print_heading or _("Invoice") }}</h1>
-    <p><strong>{{ doc.name }}</strong></p>
-    <p>{{ _("Date") }}: {{ doc.get_formatted("posting_date") }}</p>
+    <p><strong>{{ doc.name }}</strong> |
+       {{ doc.get_formatted("posting_date") }}</p>
 </div>
 
-{# Items table #}
+<p><strong>{{ doc.customer_name }}</strong></p>
+{% if doc.address_display %}
+    <p>{{ doc.address_display | safe }}</p>
+{% endif %}
+
 <table class="table">
     <thead>
         <tr>
+            <th>#</th>
             <th>{{ _("Item") }}</th>
             <th class="text-right">{{ _("Qty") }}</th>
+            <th class="text-right">{{ _("Rate") }}</th>
             <th class="text-right">{{ _("Amount") }}</th>
         </tr>
     </thead>
     <tbody>
         {% for row in doc.items %}
         <tr>
+            <td>{{ row.idx }}</td>
             <td>{{ row.item_name }}</td>
             <td class="text-right">{{ row.qty }}</td>
+            <td class="text-right">{{ row.get_formatted("rate", doc) }}</td>
             <td class="text-right">{{ row.get_formatted("amount", doc) }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
-{# Totals #}
-<div class="text-right">
-    <p><strong>{{ _("Grand Total") }}:</strong> {{ doc.get_formatted("grand_total") }}</p>
+{% for tax in doc.taxes %}
+<p class="text-right">{{ tax.description }}: {{ tax.get_formatted("tax_amount", doc) }}</p>
+{% endfor %}
+
+<p class="text-right">
+    <strong>{{ _("Grand Total") }}: {{ doc.get_formatted("grand_total") }}</strong>
+</p>
+
+{% if doc.terms %}
+<div style="margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px;">
+    <strong>{{ _("Terms and Conditions") }}</strong>
+    {{ doc.terms | safe }}
 </div>
+{% endif %}
 ```
 
-### Step 3: Test and Refine
+### Step 3: Test
 
-```
-1. Open a document (e.g., Sales Invoice)
-2. Menu > Print > Select your format
-3. Check layout, adjust CSS as needed
-4. Test PDF generation
-```
+1. Open a Sales Invoice
+2. Menu > Print > Select "My Invoice Format"
+3. Verify layout and formatting
+4. **ALWAYS** test PDF download — wkhtmltopdf renders differently from browser
+
+### Critical Rules for Print Formats
+
+- **ALWAYS** use `doc.get_formatted("field")` for currency, dates, numbers
+- **ALWAYS** pass parent doc for child rows: `row.get_formatted("rate", doc)`
+- **ALWAYS** wrap user-facing text with `_("text")` for translation
+- **ALWAYS** put CSS in a `<style>` block at the top (not external files)
+- **NEVER** use flexbox in v14/v15 (wkhtmltopdf does not support it) — V16 Chrome PDF does
+- **NEVER** use `| safe` on user-supplied input — only on trusted system HTML
 
 ---
 
-## Implementation Workflow: Email Template
+## Workflow 2: Create an Email Template
 
 ### Step 1: Create via UI
 
 ```
 Setup > Email > Email Template > New
 - Name: Payment Reminder
-- Subject: Invoice {{ doc.name }} - Payment Due
+- Subject: Invoice {{ doc.name }} - Payment Reminder
 - DocType: Sales Invoice
 ```
 
-### Step 2: Template Content
+### Step 2: Write Email Content
+
+**ALWAYS** use inline styles for emails — most clients strip `<style>` blocks.
 
 ```jinja
-<p>{{ _("Dear") }} {{ doc.customer_name }},</p>
+<div style="font-family: Arial, sans-serif; max-width: 600px;">
+    <p>{{ _("Dear") }} {{ doc.customer_name }},</p>
 
-<p>{{ _("This is a reminder that invoice") }} <strong>{{ doc.name }}</strong>
-{{ _("for") }} {{ doc.get_formatted("grand_total") }} {{ _("is due.") }}</p>
+    <p>{{ _("Invoice") }} <strong>{{ doc.name }}</strong>
+    {{ _("for") }} {{ doc.get_formatted("grand_total") }}
+    {{ _("is due for payment.") }}</p>
 
-<table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-    <tr>
-        <td style="padding: 8px; border: 1px solid #ddd;">
-            <strong>{{ _("Due Date") }}</strong>
-        </td>
-        <td style="padding: 8px; border: 1px solid #ddd;">
-            {{ frappe.format_date(doc.due_date) }}
-        </td>
-    </tr>
-    <tr>
-        <td style="padding: 8px; border: 1px solid #ddd;">
-            <strong>{{ _("Outstanding") }}</strong>
-        </td>
-        <td style="padding: 8px; border: 1px solid #ddd;">
-            {{ doc.get_formatted("outstanding_amount") }}
-        </td>
-    </tr>
-</table>
+    <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr style="background: #f5f5f5;">
+            <td style="padding: 10px; border: 1px solid #ddd;">
+                <strong>{{ _("Due Date") }}</strong></td>
+            <td style="padding: 10px; border: 1px solid #ddd;">
+                {{ frappe.format_date(doc.due_date) }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border: 1px solid #ddd;">
+                <strong>{{ _("Outstanding") }}</strong></td>
+            <td style="padding: 10px; border: 1px solid #ddd; color: #c00;">
+                {{ doc.get_formatted("outstanding_amount") }}</td>
+        </tr>
+    </table>
 
-{% if doc.items %}
-<p><strong>{{ _("Items") }}:</strong></p>
-<ul>
-{% for item in doc.items %}
-    <li>{{ item.item_name }} ({{ item.qty }})</li>
-{% endfor %}
-</ul>
-{% endif %}
+    {% if doc.items %}
+    <p><strong>{{ _("Items") }}:</strong></p>
+    <ul>
+    {% for item in doc.items[:5] %}
+        <li>{{ item.item_name }} ({{ item.qty }})</li>
+    {% endfor %}
+    {% if doc.items | length > 5 %}
+        <li style="color: #666;">{{ _("and {0} more...").format(doc.items|length - 5) }}</li>
+    {% endif %}
+    </ul>
+    {% endif %}
 
-<p>{{ _("Best regards") }},<br>
-{{ frappe.db.get_value("Company", doc.company, "company_name") }}</p>
+    <p>{{ _("Best regards") }},<br>
+    {{ frappe.db.get_value("Company", doc.company, "company_name") }}</p>
+</div>
 ```
 
-### Step 3: Use in Notifications or Code
+### Step 3: Use in Notification or Code
+
+**Option A: Auto-triggered Notification**
+
+```
+Setup > Notification > New
+- Channel: Email
+- Document Type: Sales Invoice
+- Send Alert On: Days After (7 days after due_date)
+- Condition: doc.outstanding_amount > 0
+- Email Template: Payment Reminder
+```
+
+**Option B: Send from code**
 
 ```python
-# In Server Script or Controller
+template = frappe.get_doc("Email Template", "Payment Reminder")
 frappe.sendmail(
-    recipients=[doc.email],
-    subject=frappe.render_template(
-        frappe.db.get_value("Email Template", "Payment Reminder", "subject"),
-        {"doc": doc}
-    ),
-    message=frappe.get_template("Payment Reminder").render({"doc": doc})
+    recipients=[doc.contact_email],
+    subject=frappe.render_template(template.subject, {"doc": doc}),
+    message=frappe.render_template(template.response, {"doc": doc}),
+    reference_doctype=doc.doctype,
+    reference_name=doc.name
 )
 ```
 
 ---
 
-## Implementation Workflow: Portal Page
+## Workflow 3: Create a Notification Template
 
-### Step 1: Create Directory Structure
+### Step 1: Create via UI
+
+```
+Setup > Notification > New
+- Name: Low Stock Alert
+- Channel: Email (or Slack, System Notification)
+- Document Type: Stock Ledger Entry
+- Send Alert On: Method (on change)
+- Condition: doc.actual_qty < 10
+```
+
+### Step 2: Write Message (Jinja)
+
+```jinja
+<h3>{{ _("Low Stock Alert") }}</h3>
+<p>{{ _("Item") }}: <strong>{{ doc.item_code }}</strong></p>
+<p>{{ _("Warehouse") }}: {{ doc.warehouse }}</p>
+<p>{{ _("Current Stock") }}: {{ doc.actual_qty }}</p>
+<p>{{ _("Please reorder.") }}</p>
+```
+
+---
+
+## Workflow 4: Create a Portal Page
+
+### Step 1: Create directory structure
 
 ```
 myapp/
 └── www/
-    └── projects/
+    └── my-orders/
         ├── index.html    # Jinja template
         └── index.py      # Python context
 ```
 
-### Step 2: Create Template (index.html)
-
-```jinja
-{% extends "templates/web.html" %}
-
-{% block title %}{{ _("Projects") }}{% endblock %}
-
-{% block page_content %}
-<div class="container">
-    <h1>{{ title }}</h1>
-    
-    {% if frappe.session.user != 'Guest' %}
-        <p>{{ _("Welcome") }}, {{ frappe.get_fullname() }}</p>
-    {% endif %}
-    
-    <div class="row">
-        {% for project in projects %}
-        <div class="col-md-4">
-            <div class="card">
-                <h3>{{ project.title }}</h3>
-                <p>{{ project.description | truncate(100) }}</p>
-                <a href="/projects/{{ project.name }}">{{ _("View Details") }}</a>
-            </div>
-        </div>
-        {% else %}
-        <p>{{ _("No projects found.") }}</p>
-        {% endfor %}
-    </div>
-</div>
-{% endblock %}
-```
-
-### Step 3: Create Context (index.py)
+### Step 2: Create context (index.py)
 
 ```python
 import frappe
 
 def get_context(context):
-    context.title = "Projects"
-    context.no_cache = True  # Dynamic content
-    
-    # Fetch data
-    context.projects = frappe.get_all(
-        "Project",
-        filters={"is_public": 1},
-        fields=["name", "title", "description"],
-        order_by="creation desc"
-    )
-    
+    if frappe.session.user == "Guest":
+        frappe.local.flags.redirect_location = "/login"
+        raise frappe.Redirect
+
+    context.title = "My Orders"
+    context.no_cache = True
+
+    customer = frappe.db.get_value("Contact",
+        {"user": frappe.session.user}, "link_name")
+
+    context.orders = frappe.get_all("Sales Order",
+        filters={"customer": customer, "docstatus": ["!=", 2]},
+        fields=["name", "transaction_date", "grand_total", "status"],
+        order_by="transaction_date desc",
+        limit=50
+    ) if customer else []
+
     return context
 ```
 
-### Step 4: Test
+### Step 3: Create template (index.html)
 
+```jinja
+{% extends "templates/web.html" %}
+
+{% block title %}{{ _("My Orders") }}{% endblock %}
+
+{% block page_content %}
+<div class="container my-4">
+    <h1>{{ _("My Orders") }}</h1>
+
+    {% if orders %}
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>{{ _("Order") }}</th>
+                <th>{{ _("Date") }}</th>
+                <th>{{ _("Status") }}</th>
+                <th class="text-right">{{ _("Total") }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            <tr>
+                <td><a href="/orders/{{ order.name }}">{{ order.name }}</a></td>
+                <td>{{ frappe.format_date(order.transaction_date) }}</td>
+                <td>{{ order.status }}</td>
+                <td class="text-right">
+                    {{ frappe.format(order.grand_total, {"fieldtype": "Currency"}) }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">{{ _("No orders found.") }}</p>
+    {% endif %}
+</div>
+{% endblock %}
 ```
-Visit: https://yoursite.com/projects
-```
+
+### Step 4: Test at `https://yoursite.com/my-orders`
 
 ---
 
-## Implementation Workflow: Custom Jinja Methods
+## Workflow 5: Register Custom Jinja Methods
 
-### Step 1: Register in hooks.py
+### Step 1: Add to hooks.py
 
 ```python
-# myapp/hooks.py
 jenv = {
-    "methods": ["myapp.jinja.methods"],
-    "filters": ["myapp.jinja.filters"]
+    "methods": ["myapp.jinja_utils.methods"],
+    "filters": ["myapp.jinja_utils.filters"]
 }
 ```
 
-### Step 2: Create Methods Module
+### Step 2: Create methods module
 
 ```python
-# myapp/jinja/methods.py
+# myapp/jinja_utils/methods.py
 import frappe
 
 def get_company_logo(company):
-    """Returns company logo URL - usable in any template"""
+    """Usage: {{ get_company_logo(doc.company) }}"""
     return frappe.db.get_value("Company", company, "company_logo") or ""
 
-def get_address_display(address_name):
-    """Format address for display"""
+def format_address(address_name):
+    """Usage: {{ format_address(doc.customer_address) | safe }}"""
     if not address_name:
         return ""
     return frappe.get_doc("Address", address_name).get_display()
-
-def get_outstanding_amount(customer):
-    """Get total outstanding for customer"""
-    result = frappe.db.sql("""
-        SELECT COALESCE(SUM(outstanding_amount), 0)
-        FROM `tabSales Invoice`
-        WHERE customer = %s AND docstatus = 1
-    """, customer)
-    return result[0][0] if result else 0
 ```
 
-### Step 3: Create Filters Module
+### Step 3: Create filters module
 
 ```python
-# myapp/jinja/filters.py
-
-def format_phone(value):
-    """Format phone number: 1234567890 → (123) 456-7890"""
+# myapp/jinja_utils/filters.py
+def phone_format(value):
+    """Usage: {{ doc.phone | phone_format }}"""
     if not value:
         return ""
     digits = ''.join(c for c in str(value) if c.isdigit())
     if len(digits) == 10:
         return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
     return value
-
-def currency_words(amount, currency="EUR"):
-    """Convert number to words (simplified)"""
-    return f"{currency} {amount:,.2f}"
 ```
 
-### Step 4: Use in Templates
-
-```jinja
-{# Methods - called as functions #}
-<img src="{{ get_company_logo(doc.company) }}" alt="Logo">
-<p>{{ get_address_display(doc.customer_address) }}</p>
-<p>Outstanding: {{ get_outstanding_amount(doc.customer) }}</p>
-
-{# Filters - piped after values #}
-<p>Phone: {{ doc.phone | format_phone }}</p>
-<p>Amount: {{ doc.grand_total | currency_words }}</p>
-```
-
-### Step 5: Deploy
+### Step 4: Deploy
 
 ```bash
 bench --site sitename migrate
+bench --site sitename clear-cache
+```
+
+### Critical Rules for Custom Jinja Methods
+
+- Custom methods should be **READ-ONLY** — **NEVER** write to database or commit
+- **ALWAYS** handle None/empty input gracefully (return empty string)
+- **NEVER** call slow external APIs — templates must render fast
+
+---
+
+## Workflow 6: Debug a Template
+
+### Template Not Rendering?
+
+```jinja
+<!-- Step 1: Check if doc is available -->
+<!-- DEBUG: {{ doc.name if doc else 'NO DOC' }} -->
+
+<!-- Step 2: Check child table -->
+<!-- DEBUG: items count = {{ doc.items | length if doc.items else 0 }} -->
+
+<!-- Step 3: Check specific field -->
+<!-- DEBUG: grand_total = {{ doc.grand_total }} -->
+```
+
+### Common Debugging Steps
+
+1. Check **Error Log** (Setup > Error Log) for template exceptions
+2. Use `frappe.render_template(template_string, {"doc": doc})` in bench console
+3. For Print Formats: Menu > Print > check browser console for errors
+4. For Portal Pages: check Python context — add `frappe.logger().info(context)` in `get_context`
+
+### Common Pitfalls
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Blank output | Wrong template type (Jinja in Report) | Reports use JS: `{%= %}` |
+| "None" displayed | Field is null | Use `\| default('')` |
+| Wrong currency format | Missing parent doc context | Use `row.get_formatted("rate", doc)` |
+| HTML showing as text | Auto-escaping | Add `\| safe` (trusted content only) |
+| Translations not working | Missing `_()` wrapper | Wrap all strings: `{{ _("text") }}` |
+
+---
+
+## Quick Patterns: Child Tables, Conditionals, Translation
+
+```jinja
+{# Child tables — ALWAYS pass parent doc for formatting context #}
+{% for row in doc.items %}
+  {{ row.get_formatted("rate", doc) }}  {# Correct: has currency context #}
+{% endfor %}
+
+{# Conditional sections #}
+{% if doc.shipping_address_name %}
+  {{ doc.shipping_address | safe }}
+{% endif %}
+
+{# Translation — ALWAYS wrap user-facing text #}
+{{ _("Invoice") }}
+{{ _("Page {0} of {1}").format(page, total_pages) }}
+{{ doc.get_formatted("grand_total") }}  {# Auto-formats per locale #}
 ```
 
 ---
 
-## Quick Reference: Context Variables
+## Styling/CSS in Print Formats
+
+```css
+@page { margin: 1.5cm; }
+.avoid-break { page-break-inside: avoid; }
+thead { display: table-header-group; }   /* Repeat header on pages */
+.page-break { page-break-before: always; }
+/* V14/V15: NO flexbox (wkhtmltopdf). V16 Chrome PDF: flexbox OK */
+.layout { display: table; width: 100%; }
+.col { display: table-cell; vertical-align: top; }
+```
+
+---
+
+## Context Variables Quick Reference
 
 | Template Type | Available Objects |
 |---------------|-------------------|
-| Print Format | `doc`, `frappe`, `_()` |
-| Email Template | `doc`, `frappe` (limited) |
+| Print Format | `doc`, `frappe`, `_()`, `frappe.format()` |
+| Email Template | `doc`, `frappe` (limited), `_()` |
+| Notification | `doc`, `frappe`, event data |
 | Portal Page | `frappe.session`, `frappe.form_dict`, custom context |
-| Notification | `doc`, `frappe` |
-
----
-
-## Quick Reference: Essential Methods
-
-| Need | Method |
-|------|--------|
-| Format currency/date | `doc.get_formatted("fieldname")` |
-| Format child row | `row.get_formatted("field", doc)` |
-| Translate string | `_("String")` |
-| Get linked doc | `frappe.get_doc("DocType", name)` |
-| Get single field | `frappe.db.get_value("DT", name, "field")` |
-| Current date | `frappe.utils.nowdate()` |
-| Format date | `frappe.format_date(date)` |
-
----
-
-## Critical Rules
-
-### 1. ALWAYS use get_formatted for display values
-
-```jinja
-{# ❌ Raw database value #}
-{{ doc.grand_total }}
-
-{# ✅ Properly formatted with currency #}
-{{ doc.get_formatted("grand_total") }}
-```
-
-### 2. ALWAYS pass parent doc for child table formatting
-
-```jinja
-{% for row in doc.items %}
-    {# ❌ Missing currency context #}
-    {{ row.get_formatted("rate") }}
-    
-    {# ✅ Has currency context from parent #}
-    {{ row.get_formatted("rate", doc) }}
-{% endfor %}
-```
-
-### 3. ALWAYS use translation function for user text
-
-```jinja
-{# ❌ Not translatable #}
-<h1>Invoice</h1>
-
-{# ✅ Translatable #}
-<h1>{{ _("Invoice") }}</h1>
-```
-
-### 4. NEVER use Jinja in Report Print Formats
-
-```html
-<!-- Query/Script Reports use JAVASCRIPT templating -->
-{% for(var i=0; i<data.length; i++) { %}
-<tr><td>{%= data[i].name %}</td></tr>
-{% } %}
-```
-
-### 5. NEVER execute queries in loops
-
-```jinja
-{# ❌ N+1 query problem #}
-{% for item in doc.items %}
-    {% set stock = frappe.db.get_value("Bin", ...) %}
-{% endfor %}
-
-{# ✅ Prefetch data in controller/context #}
-{% for item in items_with_stock %}
-    {{ item.stock_qty }}
-{% endfor %}
-```
 
 ---
 
@@ -480,13 +474,13 @@ bench --site sitename migrate
 
 | Feature | V14 | V15 | V16 |
 |---------|:---:|:---:|:---:|
-| Jinja templates | ✅ | ✅ | ✅ |
-| get_formatted() | ✅ | ✅ | ✅ |
-| jenv hooks | ✅ | ✅ | ✅ |
-| wkhtmltopdf PDF | ✅ | ✅ | ⚠️ |
-| **Chrome PDF** | ❌ | ❌ | ✅ |
+| Jinja templates | Yes | Yes | Yes |
+| get_formatted() | Yes | Yes | Yes |
+| jenv hooks | Yes | Yes | Yes |
+| wkhtmltopdf PDF | Yes | Yes | Deprecated |
+| **Chrome PDF** | No | No | **Yes** |
 
-> V16 Chrome PDF: See `frappe-syntax-jinja` for details.
+> V16 Chrome PDF supports modern CSS (flexbox, grid, CSS variables). See `frappe-syntax-jinja` for details.
 
 ---
 
@@ -494,7 +488,6 @@ bench --site sitename migrate
 
 | File | Contents |
 |------|----------|
-| [decision-tree.md](references/decision-tree.md) | Complete template type selection |
-| [workflows.md](references/workflows.md) | Step-by-step implementation patterns |
-| [examples.md](references/examples.md) | Complete working examples |
-| [anti-patterns.md](references/anti-patterns.md) | Common mistakes to avoid |
+| [decision-tree.md](references/decision-tree.md) | Complete template type selection flowcharts |
+| [workflows.md](references/workflows.md) | Step-by-step patterns for all template types |
+| [examples.md](references/examples.md) | Production-ready templates (invoice, email, portal) |

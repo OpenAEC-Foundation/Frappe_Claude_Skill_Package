@@ -1,11 +1,14 @@
 ---
 name: frappe-impl-hooks
 description: >
-  Use when determining HOW to implement hooks.py configurations in Frappe:
-  doc_events, scheduler_events, override hooks, permission hooks,
-  extend_bootinfo, fixtures, asset includes, and V16 extend_doctype_class.
-  Keywords: how to hook, which hook to use, doc_events vs controller,
-  override doctype, extend doctype class, permission hook, scheduler job.
+  Use when implementing hooks.py configurations in a Frappe custom app.
+  Covers step-by-step workflows for doc_events, scheduler_events,
+  override/extend_doctype_class, permission hooks, extend_bootinfo,
+  fixtures, asset injection, website hooks, and doctype_js.
+  Prevents broken transactions, missed migrations, and multi-app conflicts.
+  Keywords: hooks.py, doc_events, scheduler_events, override doctype,
+  extend doctype class, permission hook, scheduler job, fixtures,
+  doctype_js, extend_bootinfo, website hooks.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -13,161 +16,78 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Hooks - Implementation
+# Frappe Hooks Implementation Workflow
 
-This skill helps you determine HOW to implement hooks.py configurations. For exact syntax, see `frappe-syntax-hooks`.
+Step-by-step workflows for implementing hooks.py configurations. For API syntax reference, see `frappe-syntax-hooks`.
 
-**Version**: v14/v15/v16 compatible (with V16-specific features noted)
+**Version**: v14/v15/v16 (V16-specific features noted)
 
-## Main Decision: What Are You Trying to Do?
+---
+
+## Master Decision: What Are You Implementing?
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ WHAT DO YOU WANT TO ACHIEVE?                                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│ ► React to document events on OTHER apps' DocTypes?                     │
-│   └── doc_events in hooks.py                                            │
-│                                                                         │
-│ ► Run code periodically (hourly, daily, custom schedule)?               │
-│   └── scheduler_events                                                  │
-│                                                                         │
-│ ► Modify behavior of existing DocType controller?                       │
-│   ├── V16+: extend_doctype_class (RECOMMENDED - multiple apps work)     │
-│   └── V14/V15: override_doctype_class (last app wins)                   │
-│                                                                         │
-│ ► Modify existing API endpoint behavior?                                │
-│   └── override_whitelisted_methods                                      │
-│                                                                         │
-│ ► Add custom permission logic?                                          │
-│   ├── List filtering: permission_query_conditions                       │
-│   └── Document-level: has_permission                                    │
-│                                                                         │
-│ ► Send data to client on page load?                                     │
-│   └── extend_bootinfo                                                   │
-│                                                                         │
-│ ► Export/import configuration between sites?                            │
-│   └── fixtures                                                          │
-│                                                                         │
-│ ► Add JS/CSS to desk or portal?                                         │
-│   ├── Desk: app_include_js/css                                          │
-│   ├── Portal: web_include_js/css                                        │
-│   └── Specific form: doctype_js                                         │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+WHAT DO YOU WANT TO ACHIEVE?
+│
+├─► React to document lifecycle events?
+│   ├─► On OTHER app's DocTypes → doc_events in hooks.py
+│   ├─► On YOUR OWN DocTypes → controller methods (preferred)
+│   └─► On ALL DocTypes → doc_events with "*" wildcard
+│
+├─► Run code on a schedule?
+│   └─► scheduler_events (daily, hourly, cron, etc.)
+│
+├─► Modify an existing DocType's behavior?
+│   ├─► V16+: extend_doctype_class (RECOMMENDED)
+│   └─► V14/V15: override_doctype_class (last app wins!)
+│
+├─► Override an existing API endpoint?
+│   └─► override_whitelisted_methods
+│
+├─► Add custom permission logic?
+│   ├─► List filtering → permission_query_conditions
+│   └─► Document-level → has_permission
+│
+├─► Send config data to client on page load?
+│   └─► extend_bootinfo
+│
+├─► Export/import configuration?
+│   └─► fixtures
+│
+├─► Add JS/CSS to desk or portal?
+│   ├─► Desk-wide → app_include_js / app_include_css
+│   ├─► Portal-wide → web_include_js / web_include_css
+│   └─► Specific form → doctype_js
+│
+├─► Customize website/portal behavior?
+│   └─► website_context, portal_menu_items, website_route_rules
+│
+└─► Hook into session/auth lifecycle?
+    └─► on_login, on_session_creation, on_logout
 ```
 
 ---
 
-## Decision Tree: doc_events vs Controller Methods
+## Workflow 1: Implementing doc_events
+
+### When to Use
+
+Use doc_events when you need to react to document lifecycle events on DocTypes owned by OTHER apps (ERPNext, Frappe core). For YOUR OWN DocTypes, ALWAYS prefer controller methods.
+
+### Step-by-Step
+
+**Step 1: Choose the right event** (see `references/decision-tree.md`)
 
 ```
-WHERE IS THE DOCTYPE?
-│
-├─► DocType is in YOUR custom app?
-│   └─► Use controller methods (doctype/xxx/xxx.py)
-│       - Direct control over lifecycle
-│       - Cleaner code organization
-│
-├─► DocType is in ANOTHER app (ERPNext, Frappe)?
-│   └─► Use doc_events in hooks.py
-│       - Only way to hook external DocTypes
-│       - Can register multiple handlers
-│
-└─► Need to hook ALL DocTypes (logging, audit)?
-    └─► Use doc_events with wildcard "*"
+BEFORE save: validate (every save), before_insert (new only)
+AFTER save:  after_insert (new only), on_update (every save), on_change (any change)
+SUBMIT flow: before_submit → on_submit → on_change
+CANCEL flow: before_cancel → on_cancel → on_change
+DELETE:      on_trash (before), after_delete (after)
+RENAME:      before_rename, after_rename
 ```
 
-**Rule**: Controller methods for YOUR DocTypes, doc_events for OTHER apps' DocTypes.
-
----
-
-## Decision Tree: Which doc_event?
-
-```
-WHAT DO YOU NEED TO DO?
-│
-├─► Validate data or calculate fields?
-│   ├─► Before any save → validate
-│   └─► Only on new documents → before_insert
-│
-├─► React after document is saved?
-│   ├─► Only first save → after_insert
-│   ├─► Every save → on_update
-│   └─► ANY change (including db_set) → on_change
-│
-├─► Handle submittable documents?
-│   ├─► Before submit → before_submit
-│   ├─► After submit → on_submit (ledger entries here)
-│   ├─► Before cancel → before_cancel
-│   └─► After cancel → on_cancel (reverse entries here)
-│
-├─► Handle document deletion?
-│   ├─► Before delete (can prevent) → on_trash
-│   └─► After delete (cleanup) → after_delete
-│
-└─► Handle document rename?
-    ├─► Before rename → before_rename
-    └─► After rename → after_rename
-```
-
----
-
-## Decision Tree: Scheduler Event Type
-
-```
-HOW LONG DOES YOUR TASK RUN?
-│
-├─► < 5 minutes
-│   │
-│   │ HOW OFTEN?
-│   ├─► Every ~60 seconds → all
-│   ├─► Every hour → hourly
-│   ├─► Every day → daily
-│   ├─► Every week → weekly
-│   ├─► Every month → monthly
-│   └─► Specific time → cron
-│
-└─► > 5 minutes (up to 25 minutes)
-    │
-    │ HOW OFTEN?
-    ├─► Every hour → hourly_long
-    ├─► Every day → daily_long
-    ├─► Every week → weekly_long
-    └─► Every month → monthly_long
-
-⚠️ Tasks > 25 minutes: Split into chunks or use background jobs
-```
-
----
-
-## Decision Tree: Override vs Extend (V16)
-
-```
-FRAPPE VERSION?
-│
-├─► V16+
-│   │
-│   │ WHAT DO YOU NEED?
-│   ├─► Add methods/properties to DocType?
-│   │   └─► extend_doctype_class (RECOMMENDED)
-│   │       - Multiple apps can extend same DocType
-│   │       - Safer, less breakage on updates
-│   │
-│   └─► Completely replace controller logic?
-│       └─► override_doctype_class (use sparingly)
-│
-└─► V14/V15
-    └─► override_doctype_class (only option)
-        ⚠️ Last installed app wins!
-        ⚠️ Always call super() in methods!
-```
-
----
-
-## Implementation Workflow: doc_events
-
-### Step 1: Add to hooks.py
+**Step 2: Add to hooks.py**
 
 ```python
 # myapp/hooks.py
@@ -179,143 +99,162 @@ doc_events = {
 }
 ```
 
-### Step 2: Create handler module
+**Step 3: Create handler module**
 
 ```python
 # myapp/events/sales_invoice.py
 import frappe
 
 def validate(doc, method=None):
-    """
-    Args:
-        doc: The document object
-        method: Event name ("validate")
-    
-    Changes to doc ARE saved (before save event)
-    """
+    """Changes to doc ARE saved (before-save event)."""
     if doc.grand_total < 0:
         frappe.throw("Total cannot be negative")
-    
-    # Calculate custom field
-    doc.custom_margin = doc.grand_total - doc.total_cost
 
 def on_submit(doc, method=None):
-    """
-    After submit - document already saved
-    Use frappe.db.set_value for additional changes
-    """
-    create_external_record(doc)
+    """Document already saved. Use db_set_value for changes."""
+    frappe.db.set_value("Sales Invoice", doc.name,
+                        "custom_external_id", create_external(doc))
 ```
 
-### Step 3: Deploy
+**Step 4: Deploy**
 
 ```bash
 bench --site sitename migrate
 ```
 
+**Step 5: Test**
+
+```bash
+bench --site sitename execute myapp.events.sales_invoice.validate --kwargs '{"doc_name": "INV-001"}'
+# Or in bench console:
+# doc = frappe.get_doc("Sales Invoice", "INV-001"); doc.save()
+```
+
+### Critical Rules for doc_events
+
+- **NEVER** call `frappe.db.commit()` inside a doc_event handler — Frappe manages the transaction
+- **NEVER** modify `doc` fields in `on_update` — changes are lost; use `frappe.db.set_value()` instead
+- **ALWAYS** accept `method=None` as second parameter in handler signature
+- **ALWAYS** use rename signature: `def handler(doc, method, old, new, merge)`
+- **ALWAYS** run `bench --site sitename migrate` after changing hooks.py
+
 ---
 
-## Implementation Workflow: scheduler_events
+## Workflow 2: Implementing scheduler_events
 
-### Step 1: Add to hooks.py
+### Step-by-Step
+
+**Step 1: Choose frequency**
+
+| Frequency | Short (< 5 min) | Long (5-25 min) |
+|-----------|-----------------|------------------|
+| Every tick | `all` | — |
+| Hourly | `hourly` | `hourly_long` |
+| Daily | `daily` | `daily_long` |
+| Weekly | `weekly` | `weekly_long` |
+| Monthly | `monthly` | `monthly_long` |
+| Custom | `cron` | `cron` (use long queue manually) |
+
+**Step 2: Add to hooks.py**
 
 ```python
-# myapp/hooks.py
 scheduler_events = {
     "daily": ["myapp.tasks.daily_cleanup"],
-    "daily_long": ["myapp.tasks.heavy_processing"],
+    "daily_long": ["myapp.tasks.heavy_sync"],
     "cron": {
         "0 9 * * 1-5": ["myapp.tasks.weekday_report"]
     }
 }
 ```
 
-### Step 2: Create task module
+**Step 3: Implement task (NO arguments)**
 
 ```python
 # myapp/tasks.py
 import frappe
 
 def daily_cleanup():
-    """NO arguments - scheduler calls with no args"""
-    old_logs = frappe.get_all(
-        "Error Log",
-        filters={"creation": ["<", frappe.utils.add_days(None, -30)]},
-        pluck="name"
-    )
-    for name in old_logs:
-        frappe.delete_doc("Error Log", name)
+    """Scheduler calls with NO arguments."""
+    frappe.db.delete("Error Log", {
+        "creation": ["<", frappe.utils.add_days(None, -30)]
+    })
+    frappe.db.commit()
 
-def heavy_processing():
-    """Long task - use _long variant in hooks"""
-    for batch in get_batches():
-        process_batch(batch)
-        frappe.db.commit()  # Commit per batch for long tasks
+def heavy_sync():
+    """Long task — commit periodically."""
+    records = get_records_to_sync()
+    for i, record in enumerate(records):
+        process(record)
+        if i % 100 == 0:
+            frappe.db.commit()
+    frappe.db.commit()
 ```
 
-### Step 3: Deploy and verify
+**Step 4: Deploy and verify**
 
 ```bash
 bench --site sitename migrate
 bench --site sitename scheduler enable
 bench --site sitename scheduler status
+# Test manually:
+bench --site sitename execute myapp.tasks.daily_cleanup
 ```
+
+### Critical Rules for Scheduler
+
+- **NEVER** add parameters to scheduler task functions — the scheduler passes none
+- **ALWAYS** use `_long` variants for tasks exceeding 5 minutes (default queue timeout is 5 min)
+- **ALWAYS** commit periodically in long tasks to save progress
+- Tasks > 25 minutes: split into chunks or use `frappe.enqueue()`
 
 ---
 
-## Implementation Workflow: extend_doctype_class (V16+)
+## Workflow 3: Implementing extend_doctype_class (V16+)
 
-### Step 1: Add to hooks.py
+### Step-by-Step
+
+**Step 1: Add to hooks.py**
 
 ```python
-# myapp/hooks.py
 extend_doctype_class = {
-    "Sales Invoice": ["myapp.extensions.SalesInvoiceMixin"]
+    "Sales Invoice": ["myapp.extensions.sales_invoice.SalesInvoiceMixin"]
 }
 ```
 
-### Step 2: Create mixin class
+**Step 2: Create mixin class**
 
 ```python
-# myapp/extensions.py
+# myapp/extensions/sales_invoice.py
 import frappe
 from frappe.model.document import Document
 
 class SalesInvoiceMixin(Document):
-    """Mixin that extends Sales Invoice"""
-    
-    @property
-    def profit_margin(self):
-        """Add computed property"""
-        if self.grand_total:
-            return ((self.grand_total - self.total_cost) / self.grand_total) * 100
-        return 0
-    
     def validate(self):
-        """Extend validation - ALWAYS call super()"""
-        super().validate()
-        self.validate_margin()
-    
-    def validate_margin(self):
-        """Custom validation logic"""
-        if self.profit_margin < 10:
-            frappe.msgprint("Warning: Low margin invoice")
+        super().validate()  # ALWAYS call super() FIRST
+        self.custom_validation()
+
+    def custom_validation(self):
+        if self.grand_total > 1000000:
+            frappe.msgprint("High-value invoice", indicator="orange")
 ```
 
-### Step 3: Deploy
+**Step 3: Deploy** — `bench --site sitename migrate`
 
-```bash
-bench --site sitename migrate
-```
+### When to Use extend vs override
+
+- **ALWAYS** prefer `extend_doctype_class` on V16+ — multiple apps can extend safely
+- **ONLY** use `override_doctype_class` when you must completely replace controller logic
+- On V14/V15, `override_doctype_class` is the only option — last installed app wins
 
 ---
 
-## Implementation Workflow: Permission Hooks
+## Workflow 4: Implementing Permission Hooks
 
-### Step 1: Add to hooks.py
+### Step-by-Step
+
+**Step 1: Add to hooks.py**
 
 ```python
-# myapp/hooks.py
 permission_query_conditions = {
     "Sales Invoice": "myapp.permissions.si_query"
 }
@@ -324,42 +263,132 @@ has_permission = {
 }
 ```
 
-### Step 2: Create permission handlers
+**Step 2: Implement handlers**
 
 ```python
 # myapp/permissions.py
 import frappe
 
 def si_query(user):
-    """
-    Returns SQL WHERE clause for list filtering.
-    ONLY works with get_list, NOT get_all!
-    """
+    """Returns SQL WHERE clause for list filtering."""
     if not user:
         user = frappe.session.user
-    
     if "Sales Manager" in frappe.get_roles(user):
-        return ""  # No filter - see all
-    
-    # Regular users see only their own
+        return ""  # See all
     return f"`tabSales Invoice`.owner = {frappe.db.escape(user)}"
 
 def si_permission(doc, user=None, permission_type=None):
-    """
-    Document-level permission check.
-    Return: True (allow), False (deny), None (use default)
-    
-    NOTE: Can only DENY, not grant additional permissions!
-    """
+    """Returns True (allow), False (deny), or None (use default)."""
+    if not user:
+        user = frappe.session.user
     if permission_type == "write" and doc.status == "Closed":
-        return False  # Deny write on closed invoices
-    
-    return None  # Use default permission system
+        return False
+    return None
+```
+
+### Critical Rules for Permission Hooks
+
+- `permission_query_conditions` **ONLY** works with `get_list`, **NEVER** with `get_all`
+- `has_permission` can **ONLY** deny access — returning True does NOT grant additional permissions
+- **ALWAYS** handle `user=None` by defaulting to `frappe.session.user`
+
+---
+
+## Workflow 5: Asset Injection and doctype_js
+
+### Adding Global JS/CSS
+
+```python
+# hooks.py
+app_include_js = "/assets/myapp/js/myapp.min.js"       # Desk
+app_include_css = "/assets/myapp/css/myapp.min.css"     # Desk
+web_include_js = "/assets/myapp/js/portal.min.js"       # Portal
+web_include_css = "/assets/myapp/css/portal.min.css"    # Portal
+```
+
+### Extending a Specific Form
+
+```python
+# hooks.py
+doctype_js = {
+    "Sales Invoice": "public/js/sales_invoice.js"
+}
+```
+
+```javascript
+// myapp/public/js/sales_invoice.js
+frappe.ui.form.on("Sales Invoice", {
+    refresh(frm) {
+        if (frm.doc.docstatus === 1) {
+            frm.add_custom_button(__("Custom Action"), () => {
+                frappe.call({
+                    method: "myapp.api.custom_action",
+                    args: { invoice: frm.doc.name },
+                    freeze: true
+                });
+            }, __("Actions"));
+        }
+    }
+});
+```
+
+**ALWAYS** run `bench build --app myapp` after changing JS/CSS files.
+
+---
+
+## Workflow 6: Fixtures, Boot Info, and Website Hooks
+
+### Fixtures
+
+```python
+fixtures = [
+    {"dt": "Custom Field", "filters": [["module", "=", "My App"]]},
+    {"dt": "Property Setter", "filters": [["module", "=", "My App"]]}
+]
+```
+
+**NEVER** export fixtures without filters — it captures ALL apps' customizations.
+
+### extend_bootinfo
+
+```python
+extend_bootinfo = "myapp.boot.extend_with_config"
+```
+
+```python
+def extend_with_config(bootinfo):
+    bootinfo.my_app = {"feature_enabled": True}
+    # NEVER send secrets — bootinfo is visible in browser DevTools
+```
+
+### Website Hooks
+
+```python
+website_route_rules = [
+    {"from_route": "/shop/<category>", "to_route": "shop"}
+]
+portal_menu_items = [
+    {"title": "My Orders", "route": "/my-orders", "role": "Customer"}
+]
+on_login = "myapp.handlers.on_login"
+on_logout = "myapp.handlers.on_logout"
 ```
 
 ---
 
-## Quick Reference: Handler Signatures
+## Migration: Moving Logic Between Hooks, Controllers, and Server Scripts
+
+| From | To | Steps |
+|------|----|-------|
+| Server Script → hooks.py | 1. Create Python handler, 2. Add doc_events, 3. Disable Server Script, 4. Migrate |
+| hooks.py → Controller | 1. Move logic to doctype .py, 2. Remove doc_events entry, 3. Migrate |
+| Controller → hooks.py | 1. Create events module, 2. Add doc_events, 3. Remove from controller, 4. Migrate |
+
+**ALWAYS** migrate after ANY hooks.py change: `bench --site sitename migrate`
+
+---
+
+## Handler Signatures Quick Reference
 
 | Hook | Signature |
 |------|-----------|
@@ -367,69 +396,10 @@ def si_permission(doc, user=None, permission_type=None):
 | rename events | `def handler(doc, method, old, new, merge):` |
 | scheduler_events | `def handler():` (no args) |
 | extend_bootinfo | `def handler(bootinfo):` |
-| permission_query | `def handler(user):` → returns SQL string |
-| has_permission | `def handler(doc, user=None, permission_type=None):` → True/False/None |
-| override methods | Must match original signature exactly |
-
----
-
-## Critical Rules
-
-### 1. Never commit in doc_events
-
-```python
-# ❌ WRONG - breaks transaction
-def on_update(doc, method=None):
-    frappe.db.commit()
-
-# ✅ CORRECT - Frappe commits automatically
-def on_update(doc, method=None):
-    update_related(doc)
-```
-
-### 2. Use db_set_value after on_update
-
-```python
-# ❌ WRONG - change is lost
-def on_update(doc, method=None):
-    doc.status = "Processed"
-
-# ✅ CORRECT
-def on_update(doc, method=None):
-    frappe.db.set_value(doc.doctype, doc.name, "status", "Processed")
-```
-
-### 3. Always call super() in overrides
-
-```python
-# ❌ WRONG - breaks core functionality
-class CustomInvoice(SalesInvoice):
-    def validate(self):
-        self.my_validation()
-
-# ✅ CORRECT
-class CustomInvoice(SalesInvoice):
-    def validate(self):
-        super().validate()  # FIRST!
-        self.my_validation()
-```
-
-### 4. Always migrate after hooks changes
-
-```bash
-# Required after ANY hooks.py change
-bench --site sitename migrate
-```
-
-### 5. permission_query only works with get_list
-
-```python
-# ❌ NOT filtered by permission_query_conditions
-frappe.db.get_all("Sales Invoice", filters={})
-
-# ✅ Filtered by permission_query_conditions
-frappe.db.get_list("Sales Invoice", filters={})
-```
+| permission_query | `def handler(user):` returns SQL string |
+| has_permission | `def handler(doc, user=None, permission_type=None):` returns True/False/None |
+| on_login | `def handler(login_manager):` |
+| on_logout | `def handler():` |
 
 ---
 
@@ -437,12 +407,13 @@ frappe.db.get_list("Sales Invoice", filters={})
 
 | Feature | V14 | V15 | V16 |
 |---------|:---:|:---:|:---:|
-| doc_events | ✅ | ✅ | ✅ |
-| scheduler_events | ✅ | ✅ | ✅ |
-| override_doctype_class | ✅ | ✅ | ✅ |
-| **extend_doctype_class** | ❌ | ❌ | ✅ |
-| permission hooks | ✅ | ✅ | ✅ |
-| Scheduler tick | 4 min | 4 min | 60 sec |
+| doc_events | Yes | Yes | Yes |
+| scheduler_events | Yes | Yes | Yes |
+| override_doctype_class | Yes | Yes | Yes |
+| **extend_doctype_class** | No | No | **Yes** |
+| permission hooks | Yes | Yes | Yes |
+| Scheduler tick interval | ~4 min | ~4 min | ~60 sec |
+| auth_hooks | No | Yes | Yes |
 
 ---
 
@@ -452,5 +423,4 @@ frappe.db.get_list("Sales Invoice", filters={})
 |------|----------|
 | [decision-tree.md](references/decision-tree.md) | Complete hook selection flowcharts |
 | [workflows.md](references/workflows.md) | Step-by-step implementation patterns |
-| [examples.md](references/examples.md) | Working code examples |
-| [anti-patterns.md](references/anti-patterns.md) | Common mistakes and solutions |
+| [examples.md](references/examples.md) | Working code examples for all hook types |

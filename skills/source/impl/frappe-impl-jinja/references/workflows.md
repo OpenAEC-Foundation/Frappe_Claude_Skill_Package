@@ -781,12 +781,126 @@ Add to "Print Format" field or create separate Print Format linked to report
 
 ---
 
+## Workflow 9: Notification Template
+
+**Goal**: Create system notifications with dynamic Jinja content
+
+### Step 1: Create Notification
+
+```
+Setup > Notification > New
+
+- Name: Low Stock Alert
+- Channel: Email (or System Notification, Slack)
+- Document Type: Stock Ledger Entry
+- Send Alert On: Value Change
+- Condition: doc.actual_qty < doc.reorder_level and doc.reorder_level > 0
+```
+
+### Step 2: Write Message (Jinja)
+
+```jinja
+<h3>{{ _("Low Stock Alert") }}</h3>
+
+<table style="width: 100%; border-collapse: collapse;">
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>{{ _("Item") }}</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ doc.item_code }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>{{ _("Warehouse") }}</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ doc.warehouse }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>{{ _("Current Qty") }}</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd; color: red;">{{ doc.actual_qty }}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd;"><strong>{{ _("Reorder Level") }}</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd;">{{ doc.reorder_level }}</td>
+    </tr>
+</table>
+
+<p>{{ _("Please create a purchase order to replenish stock.") }}</p>
+```
+
+### Step 3: Configure Recipients
+
+- Set recipients to specific roles, users, or use dynamic owner field
+
+---
+
+## Workflow 10: Debugging Templates
+
+**Goal**: Diagnose and fix template rendering issues
+
+### Step 1: Add debug output
+
+```jinja
+<!-- DEBUG START -->
+<!-- doc exists: {{ 'YES' if doc else 'NO' }} -->
+<!-- doc.name: {{ doc.name if doc else 'N/A' }} -->
+<!-- items count: {{ doc.items | length if doc.items else 0 }} -->
+<!-- DEBUG END -->
+```
+
+### Step 2: Check Error Log
+
+```
+Setup > Error Log
+Search for "Jinja" or "template" errors
+```
+
+### Step 3: Test in bench console
+
+```python
+# Test a print format template
+doc = frappe.get_doc("Sales Invoice", "INV-001")
+template = """{{ doc.name }} - {{ doc.get_formatted("grand_total") }}"""
+print(frappe.render_template(template, {"doc": doc}))
+
+# Test an email template
+template = frappe.get_doc("Email Template", "Payment Reminder")
+rendered = frappe.render_template(template.response, {"doc": doc})
+print(rendered)
+```
+
+### Step 4: Common fixes
+
+| Problem | Diagnostic | Fix |
+|---------|-----------|-----|
+| Blank output | Check Error Log | Fix syntax error or missing variable |
+| "None" in output | Field is empty | Use `\| default('')` filter |
+| Wrong currency | Missing parent doc | Pass `doc` to `get_formatted()` |
+| Slow rendering | N+1 queries in loop | Prefetch data in controller/context |
+| PDF different from screen | wkhtmltopdf CSS limits | Avoid flexbox, test PDF after changes |
+
+---
+
+## Anti-Patterns Quick Reference
+
+| Anti-Pattern | Risk | Correct Approach |
+|--------------|------|-----------------|
+| Jinja syntax in Report Print | Blank output | Use JS templating `{%= %}` |
+| Raw values `{{ doc.amount }}` | Wrong format | Use `get_formatted()` |
+| Missing parent in child formatting | Wrong currency | `row.get_formatted("rate", doc)` |
+| DB queries in template loops | N+1 performance | Prefetch in controller |
+| `\| safe` on user input | XSS vulnerability | Only for trusted system HTML |
+| Hardcoded strings | Not translatable | Use `_("text")` |
+| `<style>` in email | Stripped by clients | Inline styles only |
+| Heavy computation in templates | Slow render | Move logic to Python |
+| Writing to DB in jenv methods | Transaction corruption | Methods must be read-only |
+| No PDF testing | Layout breaks in PDF | ALWAYS test PDF output |
+
+---
+
 ## Quick Reference: Workflow Checklist
 
 | Template Type | Location | Context | Key Steps |
 |---------------|----------|---------|-----------|
-| Print Format | Setup > Print | `doc`, `frappe` | Create record → Add HTML → Test print |
-| Email Template | Setup > Email | `doc`, `frappe` | Create record → Add HTML → Link to Notification |
-| Portal Page | myapp/www/ | Custom | Create .py → Create .html → Test URL |
-| Custom Methods | myapp/jinja_utils/ | N/A | Add to hooks.py → Create module → Migrate |
-| Report Print | Report record | `data[]`, `filters` | Edit report → Add JS template |
+| Print Format | Setup > Print | `doc`, `frappe` | Create record, Add HTML, Test print + PDF |
+| Email Template | Setup > Email | `doc`, `frappe` | Create record, Add HTML, Link to Notification |
+| Notification | Setup > Notification | `doc`, event data | Create rule, Write message, Set recipients |
+| Portal Page | myapp/www/ | Custom | Create .py, Create .html, Test URL |
+| Custom Methods | myapp/jinja_utils/ | N/A | Add to hooks.py, Create module, Migrate |
+| Report Print | Report record | `data[]`, `filters` | Edit report, Add JS template |

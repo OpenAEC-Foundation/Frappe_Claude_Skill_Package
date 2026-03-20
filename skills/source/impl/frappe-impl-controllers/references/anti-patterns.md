@@ -1,402 +1,273 @@
 # Controller Anti-Patterns
 
-Common mistakes to avoid when implementing Frappe controllers.
-
-## Anti-Pattern 1: Modifying self After on_update
-
-### ❌ Wrong
+## AP-1: Modifying self After on_update
 
 ```python
+# WRONG — Changes are NOT saved after on_update
 def on_update(self):
-    self.status = "Completed"  # NOT SAVED!
-    self.processed_date = frappe.utils.today()  # NOT SAVED!
+    self.status = "Completed"           # LOST
+    self.processed_date = frappe.utils.today()  # LOST
 ```
 
-**Why it fails**: After `on_update`, the document has already been written to the database. Changes to `self` are only in memory and will be lost.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Use db_set or set_value
 def on_update(self):
-    # Use db_set for post-save changes
     frappe.db.set_value(self.doctype, self.name, {
         "status": "Completed",
         "processed_date": frappe.utils.today()
     })
-    
-    # Or single field
-    frappe.db.set_value(self.doctype, self.name, "status", "Completed")
 ```
 
-## Anti-Pattern 2: Calling self.save() in on_update
-
-### ❌ Wrong
+## AP-2: Calling self.save() in on_update
 
 ```python
+# WRONG — Infinite loop: save → on_update → save → on_update...
 def on_update(self):
     self.counter = (self.counter or 0) + 1
-    self.save()  # INFINITE LOOP!
+    self.save()
 ```
 
-**Why it fails**: `save()` triggers `on_update` again, creating an infinite loop that will crash the system.
-
-### ✅ Correct
-
 ```python
+# CORRECT — db_set does NOT trigger hooks
 def on_update(self):
-    # Use db_set which doesn't trigger hooks
     new_counter = (self.counter or 0) + 1
-    frappe.db.set_value(self.doctype, self.name, "counter", new_counter, 
+    frappe.db.set_value(self.doctype, self.name, "counter", new_counter,
                        update_modified=False)
 ```
 
-## Anti-Pattern 3: Manual Commits
-
-### ❌ Wrong
+## AP-3: Manual Commits in Hooks
 
 ```python
+# WRONG — Breaks transaction management
 def validate(self):
     self.do_something()
-    frappe.db.commit()  # DON'T DO THIS
-
-def on_update(self):
-    self.update_related()
-    frappe.db.commit()  # DON'T DO THIS
+    frappe.db.commit()  # Breaks rollback on error
 ```
 
-**Why it fails**: Frappe manages transactions automatically. Manual commits can break rollback behavior and cause partial updates on errors.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Let framework handle transactions
 def validate(self):
     self.do_something()
-    # No commit needed - Frappe handles it
-
-def on_update(self):
-    self.update_related()
-    # No commit needed - Frappe handles it
+    # No commit — Frappe commits after successful save
 ```
 
-## Anti-Pattern 4: Heavy Operations in validate
-
-### ❌ Wrong
+## AP-4: Heavy Operations in validate
 
 ```python
+# WRONG — Blocks user UI
 def validate(self):
-    # This blocks the save for the user
-    self.process_large_dataset()  # Takes 30 seconds
-    self.generate_reports()  # Takes 1 minute
-    self.sync_to_external_api()  # Network calls
+    self.process_large_dataset()    # 30 seconds
+    self.sync_to_external_api()     # Network call
 ```
 
-**Why it fails**: `validate` runs synchronously before save. Long operations block the UI and can timeout.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Queue heavy work
 def validate(self):
-    # Only quick validations
-    self.validate_required_fields()
+    self.validate_fields()       # Quick checks only
     self.calculate_totals()
 
 def on_update(self):
-    # Queue heavy operations for background
     if self.needs_processing:
-        frappe.enqueue(
-            'myapp.tasks.process_document',
-            queue='long',
-            timeout=300,
-            doc_name=self.name
-        )
+        frappe.enqueue('myapp.tasks.process_document',
+            queue='long', timeout=300, doc_name=self.name)
 ```
 
-## Anti-Pattern 5: Not Calling super() in Override
-
-### ❌ Wrong
+## AP-5: Not Calling super() in Override
 
 ```python
+# WRONG — Skips ALL standard ERPNext validation
 class CustomSalesInvoice(SalesInvoice):
     def validate(self):
-        # Missing super().validate()!
+        self.custom_validation()  # Parent validate never runs!
+```
+
+```python
+# CORRECT — ALWAYS call parent first
+class CustomSalesInvoice(SalesInvoice):
+    def validate(self):
+        super().validate()
         self.custom_validation()
 ```
 
-**Why it fails**: Standard ERPNext validations and calculations are skipped, leading to inconsistent data and broken functionality.
-
-### ✅ Correct
+## AP-6: Assuming Hook Order Across Documents
 
 ```python
-class CustomSalesInvoice(SalesInvoice):
-    def validate(self):
-        super().validate()  # ALWAYS call parent first
-        self.custom_validation()
+# WRONG — Nested hook cycles are unpredictable
+def on_update(self):
+    other = frappe.get_doc("Other", self.link)
+    other.field = "value"
+    other.save()  # Triggers Other's full hook cycle
+    # Assuming Other's on_update has completed here
 ```
 
-## Anti-Pattern 6: Assuming Hook Execution Order Across Documents
-
-### ❌ Wrong
-
 ```python
+# CORRECT — Use db_set or flags
 def on_update(self):
-    # Assuming other_doc's hooks have completed
-    other_doc = frappe.get_doc("Other", self.link)
-    other_doc.some_field = "value"
-    other_doc.save()  # This triggers OTHER doc's hooks
-    
-    # Assuming other_doc.on_update has run
-    result = frappe.db.get_value("Other", self.link, "computed_field")
+    frappe.db.set_value("Other", self.link, "field", "value")
+
+# OR with flags to prevent recursion
+def on_update(self):
+    other = frappe.get_doc("Other", self.link)
+    other.flags.from_parent_update = True
+    other.field = "value"
+    other.save()
 ```
 
-**Why it fails**: Each document has its own hook cycle. Saving another document from within your hooks creates nested cycles that are hard to reason about.
-
-### ✅ Correct
+## AP-7: Bypassing Permissions Without Reason
 
 ```python
-def on_update(self):
-    # Use db_set to avoid triggering other doc's hooks
-    frappe.db.set_value("Other", self.link, "some_field", "value")
-    
-    # Or use flags to prevent recursive updates
-    other_doc = frappe.get_doc("Other", self.link)
-    other_doc.flags.from_parent_update = True
-    other_doc.some_field = "value"
-    other_doc.save()
-
-# In Other doctype's controller
-def on_update(self):
-    if self.flags.get('from_parent_update'):
-        return  # Skip to prevent recursion
-    # Normal processing
-```
-
-## Anti-Pattern 7: Ignoring Permissions Without Reason
-
-### ❌ Wrong
-
-```python
+# WRONG — Security hole
 def after_insert(self):
-    # Always bypassing permissions "just to be safe"
     doc = frappe.get_doc({"doctype": "Task", "subject": "Test"})
+    doc.flags.ignore_permissions = True  # Always bypassing
+    doc.insert()
+```
+
+```python
+# CORRECT — Only bypass when justified
+def after_insert(self):
+    doc = frappe.get_doc({"doctype": "Task", "subject": "Test"})
+    # System-generated docs need permission bypass
     doc.flags.ignore_permissions = True
     doc.insert()
+    # Document reason: auto-created by system
 ```
 
-**Why it fails**: Bypassing permissions can create security holes and audit trail issues.
-
-### ✅ Correct
+## AP-8: get_doc in Loops
 
 ```python
-def after_insert(self):
-    # Only bypass when there's a valid reason
-    doc = frappe.get_doc({"doctype": "Task", "subject": "Test"})
-    
-    # System-generated documents may need permission bypass
-    if self.is_system_generated:
-        doc.flags.ignore_permissions = True
-    
-    doc.insert()
-```
-
-## Anti-Pattern 8: Using get_doc Without Caching
-
-### ❌ Wrong
-
-```python
+# WRONG — N database queries for same document
 def validate(self):
     for item in self.items:
-        # Fetches same customer doc multiple times!
-        customer = frappe.get_doc("Customer", self.customer)
+        customer = frappe.get_doc("Customer", self.customer)  # Same query N times
         item.credit_limit = customer.credit_limit
 ```
 
-**Why it fails**: `get_doc` queries the database every time. In loops, this creates N queries for the same document.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Cache or fetch once
 def validate(self):
-    # Cache the document for reuse
     customer = frappe.get_cached_doc("Customer", self.customer)
-    
     for item in self.items:
         item.credit_limit = customer.credit_limit
 
 # Or for single values
 def validate(self):
-    credit_limit = frappe.db.get_value("Customer", self.customer, "credit_limit")
+    limit = frappe.db.get_value("Customer", self.customer, "credit_limit")
     for item in self.items:
-        item.credit_limit = credit_limit
+        item.credit_limit = limit
 ```
 
-## Anti-Pattern 9: Swallowing All Exceptions
-
-### ❌ Wrong
+## AP-9: Silent Error Swallowing
 
 ```python
+# WRONG — Errors hidden, impossible to debug
 def on_update(self):
     try:
         self.send_notification()
-        self.update_external_system()
-        self.process_data()
+        self.update_external()
     except:
-        pass  # Silent failure - no idea what went wrong
+        pass
 ```
 
-**Why it fails**: Errors are hidden, making debugging impossible. You won't know when things break.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Log non-critical, fail loudly for critical
 def on_update(self):
-    # Non-critical operations should log errors
     try:
-        self.send_notification()
+        self.send_notification()  # Non-critical
     except Exception:
-        frappe.log_error(f"Failed to send notification for {self.name}")
-    
-    # Critical operations should fail loudly
-    self.update_ledger()  # Let it throw if it fails
+        frappe.log_error(f"Notification failed: {self.name}")
+
+    self.update_ledger()  # Critical — let it throw
 ```
 
-## Anti-Pattern 10: Duplicate Code in validate and before_submit
-
-### ❌ Wrong
+## AP-10: Duplicate Logic in validate and before_submit
 
 ```python
+# WRONG — validate ALREADY runs before before_submit
 def validate(self):
     if not self.items:
         frappe.throw(_("Items required"))
     self.total = sum(item.amount for item in self.items)
 
 def before_submit(self):
-    # Duplicating validation from validate!
-    if not self.items:
+    if not self.items:                     # Duplicate!
         frappe.throw(_("Items required"))
-    self.total = sum(item.amount for item in self.items)
+    self.total = sum(...)                  # Duplicate!
 ```
 
-**Why it fails**: `validate` already runs before `before_submit`. Duplicating logic is wasteful and error-prone when one is updated but not the other.
-
-### ✅ Correct
-
 ```python
+# CORRECT — Put common in validate, submit-only in before_submit
 def validate(self):
-    # Common validations and calculations
     self.validate_items()
     self.calculate_totals()
 
-def validate_items(self):
-    if not self.items:
-        frappe.throw(_("Items required"))
-
-def calculate_totals(self):
-    self.total = sum(item.amount for item in self.items)
-
 def before_submit(self):
-    # ONLY submit-specific validations
+    # ONLY submit-specific checks
     if self.total > 50000 and not self.approval:
-        frappe.throw(_("Approval required for high value"))
+        frappe.throw(_("Approval required"))
 ```
 
-## Anti-Pattern 11: Using datetime Instead of frappe.utils
-
-### ❌ Wrong
+## AP-11: Using datetime Instead of frappe.utils
 
 ```python
+# WRONG — Timezone issues, format incompatibilities
 from datetime import datetime, timedelta
-
-def validate(self):
-    self.created_date = datetime.now()
-    self.due_date = datetime.now() + timedelta(days=30)
+self.due_date = datetime.now() + timedelta(days=30)
 ```
 
-**Why it fails**: Timezone issues, format incompatibilities with Frappe's date handling, and doesn't respect user's date format preferences.
-
-### ✅ Correct
-
 ```python
-def validate(self):
-    self.created_date = frappe.utils.now()
-    self.due_date = frappe.utils.add_days(frappe.utils.today(), 30)
+# CORRECT — Uses Frappe's timezone and format handling
+self.due_date = frappe.utils.add_days(frappe.utils.today(), 30)
 ```
 
-## Anti-Pattern 12: Hardcoded Values
-
-### ❌ Wrong
+## AP-12: Hardcoded Values
 
 ```python
-def validate(self):
-    if self.amount > 50000:
-        self.requires_approval = 1
-    
-    self.tax_rate = 0.18  # 18% VAT
+# WRONG — Requires code changes for different values
+if self.amount > 50000:
+    self.requires_approval = 1
+self.tax_rate = 0.18
 ```
 
-**Why it fails**: Values change, and changes require code deployments. Different companies/sites may need different values.
-
-### ✅ Correct
-
 ```python
-def validate(self):
-    settings = frappe.get_cached_doc("My Settings", "My Settings")
-    
-    if self.amount > settings.approval_threshold:
-        self.requires_approval = 1
-    
-    self.tax_rate = settings.default_tax_rate
+# CORRECT — Configurable via Settings
+settings = frappe.get_cached_doc("My Settings", "My Settings")
+if self.amount > settings.approval_threshold:
+    self.requires_approval = 1
+self.tax_rate = settings.default_tax_rate
 ```
 
-## Anti-Pattern 13: Sending Emails Synchronously
-
-### ❌ Wrong
+## AP-13: Synchronous Emails in Bulk
 
 ```python
+# WRONG — Blocks until all sent, fails if email server down
 def on_submit(self):
-    # Blocks until all emails are sent
     for recipient in self.get_all_recipients():
-        frappe.sendmail(
-            recipients=[recipient],
-            subject=f"Document {self.name} submitted",
-            message="Your document has been submitted."
-        )
+        frappe.sendmail(recipients=[recipient], subject=..., message=...)
 ```
 
-**Why it fails**: Sending many emails blocks the request. Email server issues will fail the submit.
-
-### ✅ Correct
-
 ```python
-def on_submit(self):
-    # Queue emails for background sending
-    frappe.enqueue(
-        'myapp.notifications.send_submit_notifications',
-        queue='short',
-        doc_name=self.name,
-        doctype=self.doctype
-    )
-
-# Or use Frappe's built-in async
+# CORRECT — Queue for background
 def on_submit(self):
     frappe.sendmail(
         recipients=self.get_all_recipients(),
         subject=f"Document {self.name} submitted",
-        message="Your document has been submitted.",
-        now=False  # Queue for background sending
-    )
+        message="Submitted.",
+        now=False)  # Queue for background sending
 ```
 
-## Quick Reference: What NOT To Do
+## Quick Reference
 
-| Don't | Do Instead |
-|-------|------------|
+| Do NOT | Do Instead |
+|--------|------------|
 | `self.x = y` in on_update | `frappe.db.set_value(...)` |
 | `self.save()` in on_update | `frappe.db.set_value(...)` |
-| `frappe.db.commit()` anywhere | Let framework handle it |
-| Heavy processing in validate | Use `frappe.enqueue()` |
-| Skip `super().validate()` | Always call parent first |
+| `frappe.db.commit()` in hooks | Let framework handle |
+| Heavy processing in validate | `frappe.enqueue()` |
+| Skip `super().validate()` | ALWAYS call parent |
 | `except: pass` | Log errors properly |
-| `frappe.get_doc()` in loops | Use `frappe.get_cached_doc()` |
+| `frappe.get_doc()` in loops | `frappe.get_cached_doc()` |
 | Hardcode thresholds/rates | Use Settings DocType |
-| Synchronous emails | Use `now=False` or enqueue |
-| Duplicate logic across hooks | Refactor to shared methods |
+| Synchronous bulk emails | `now=False` or `frappe.enqueue` |
+| Duplicate across hooks | Shared methods |
+| `datetime.now()` | `frappe.utils.now()` |

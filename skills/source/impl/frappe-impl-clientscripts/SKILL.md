@@ -1,10 +1,13 @@
 ---
 name: frappe-impl-clientscripts
 description: >
-  Use when determining HOW to implement client-side features in ERPNext:
-  form validations, dynamic UI, server integration, child table logic.
-  Decision trees for choosing the right approach. Keywords: how do I
-  implement, client script workflow, form logic, dynamic UI, calculate fields.
+  Use when implementing client-side form features in Frappe/ERPNext:
+  field visibility, cascading filters, calculated fields, custom buttons,
+  server calls, form validation, child table logic, debugging.
+  Covers step-by-step workflows from Setup > Client Script through
+  migration to custom app JS. Keywords: how to implement client script,
+  form logic workflow, dynamic UI, calculate fields, frm.call, frappe.call,
+  frappe.xcall, client script testing, field dependency, custom button.
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -12,285 +15,268 @@ metadata:
   version: "2.0"
 ---
 
-# ERPNext Client Scripts - Implementation (EN)
+# Client Scripts — Implementation Workflows
 
-This skill helps you determine HOW to implement client-side features. For exact syntax, see `frappe-syntax-clientscripts`.
+Step-by-step workflows for building client-side form features. For exact API syntax, see `frappe-syntax-clientscripts`.
 
-**Version**: v14/v15/v16 compatible
+**Version**: v14/v15/v16 | **Note**: v13 renamed "Custom Script" to "Client Script"
 
-## Main Decision: Client or Server?
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ Must the logic ALWAYS execute?                          │
-│ (including imports, API calls, Server Scripts)          │
-├─────────────────────────────────────────────────────────┤
-│ YES → Server-side (Controller or Server Script)         │
-│ NO  → What is the primary goal?                         │
-│       ├── UI feedback/UX improvement → Client Script    │
-│       ├── Show/hide fields → Client Script              │
-│       ├── Link filters → Client Script                  │
-│       ├── Data validation → BOTH (client + server)      │
-│       └── Calculations → Depends on criticality         │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Rule of thumb**: Client Scripts for UX, Server for integrity.
-
-## Decision Tree: Which Event?
+## Quick Decision: Client or Server?
 
 ```
-WHAT DO YOU WANT TO ACHIEVE?
-│
-├─► Set link field filters
-│   └── setup (once, early in lifecycle)
-│
-├─► Add custom buttons
-│   └── refresh (after each form load/save)
-│
-├─► Show/hide fields based on condition
-│   └── refresh + {fieldname} (both needed)
-│
-├─► Validation before save
-│   └── validate (use frappe.throw on error)
-│
-├─► Action after successful save
-│   └── after_save
-│
-├─► Calculation on field change
-│   └── {fieldname}
-│
-├─► Child table row added
-│   └── {tablename}_add
-│
-├─► Child table field changed
-│   └── Child DocType event: {fieldname}
-│
-└─► One-time initialization
-    └── setup or onload
+MUST the logic ALWAYS execute (imports, API, Data Import)?
+├── YES → Server Script or Controller
+└── NO  → What is the goal?
+         ├── UI feedback / UX → Client Script
+         ├── Show/hide fields → Client Script
+         ├── Link filters → Client Script
+         ├── Data validation → BOTH (client for UX, server for integrity)
+         └── Calculations → Client for display, server for critical
 ```
 
-→ See [references/decision-tree.md](references/decision-tree.md) for complete decision tree.
+**Rule**: ALWAYS use Client Scripts for UX. ALWAYS back critical logic with server-side validation.
 
-## Implementation Workflows
+## Workflow 1: Create a Client Script via UI
 
-### Workflow 1: Dynamic Field Visibility
+1. Navigate to **Setup > Client Script** (or type "New Client Script" in awesomebar)
+2. Select the target **DocType**
+3. ALWAYS set **Enabled** checkbox
+4. Write script using the `frappe.ui.form.on` pattern
+5. Save — script is active immediately (no restart needed)
+6. Open target DocType form → test behavior
+7. Open browser DevTools Console (F12) for debugging
 
-**Scenario**: Show "delivery_date" only when "requires_delivery" is checked.
+**When to migrate to custom app**: ALWAYS migrate when the script exceeds 50 lines, needs version control, or must be deployed across environments.
+
+## Workflow 2: Choose the Right Event
+
+```
+WHAT DO YOU WANT?
+├── Set link filters         → setup (once, earliest lifecycle)
+├── Add custom buttons       → refresh (re-added after each render)
+├── Show/hide fields         → refresh + {fieldname} (BOTH needed)
+├── Validate before save     → validate (frappe.throw stops save)
+├── Action after save        → after_save
+├── Calculate on change      → {fieldname} handler
+├── Child row added          → {tablename}_add
+├── Child row removed        → {tablename}_remove
+├── Child field changed      → Child DocType: {fieldname}
+├── One-time init            → setup or onload
+└── After full DOM render    → onload_post_render
+```
+
+> See [references/decision-tree.md](references/decision-tree.md) for complete event timing matrix.
+
+## Workflow 3: Field Visibility Toggle
+
+**Goal**: Show "delivery_date" only when "requires_delivery" is checked.
+
+**Step 1**: Implement BOTH refresh and fieldname events:
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     refresh(frm) {
-        // Initial state on form load
-        frm.trigger('requires_delivery');
+        frm.trigger('requires_delivery'); // Set initial state
     },
-    
     requires_delivery(frm) {
-        // Toggle on checkbox change AND refresh
         frm.toggle_display('delivery_date', frm.doc.requires_delivery);
         frm.toggle_reqd('delivery_date', frm.doc.requires_delivery);
     }
 });
 ```
 
-**Why both events?**
-- `refresh`: Sets correct state when form opens
-- `{fieldname}`: Responds to user interaction
+**Why both?** `refresh` sets state on form load. `{fieldname}` responds to user interaction. NEVER use only one — the form will show wrong state on load or on change.
 
-### Workflow 2: Cascading Dropdowns
+## Workflow 4: Cascading Link Filters
 
-**Scenario**: Filter "city" based on selected "country".
+**Goal**: Filter "city" based on selected "country".
 
 ```javascript
 frappe.ui.form.on('Customer', {
     setup(frm) {
-        // Filter MUST be in setup for consistency
+        // ALWAYS set filters in setup — ensures consistency
         frm.set_query('city', () => ({
-            filters: {
-                country: frm.doc.country || ''
-            }
+            filters: { country: frm.doc.country || '' }
         }));
     },
-    
     country(frm) {
-        // Clear city when country changes
-        frm.set_value('city', '');
+        frm.set_value('city', ''); // ALWAYS clear dependent field
     }
 });
 ```
 
-### Workflow 3: Automatic Calculations
+**Rule**: ALWAYS put `set_query` in `setup`. ALWAYS clear child fields when parent changes.
 
-**Scenario**: Calculate total in child table with discount.
+## Workflow 5: Calculated Fields (Child Table)
+
+**Goal**: Calculate row amounts and document totals.
 
 ```javascript
-frappe.ui.form.on('Sales Invoice', {
-    discount_percentage(frm) {
-        calculate_totals(frm);
-    }
+frappe.ui.form.on('Invoice Item', {
+    qty(frm, cdt, cdn) { calculate_row(frm, cdt, cdn); },
+    rate(frm, cdt, cdn) { calculate_row(frm, cdt, cdn); },
+    amount(frm) { calculate_totals(frm); }
 });
 
-frappe.ui.form.on('Sales Invoice Item', {
-    qty(frm, cdt, cdn) {
-        calculate_row_amount(frm, cdt, cdn);
-    },
-    
-    rate(frm, cdt, cdn) {
-        calculate_row_amount(frm, cdt, cdn);
-    },
-    
-    amount(frm) {
-        // Recalculate document total on row change
-        calculate_totals(frm);
-    }
+frappe.ui.form.on('Invoice', {
+    items_remove(frm) { calculate_totals(frm); }
 });
 
-function calculate_row_amount(frm, cdt, cdn) {
+function calculate_row(frm, cdt, cdn) {
     let row = frappe.get_doc(cdt, cdn);
-    frappe.model.set_value(cdt, cdn, 'amount', row.qty * row.rate);
+    frappe.model.set_value(cdt, cdn, 'amount',
+        flt(row.qty) * flt(row.rate));
 }
 
 function calculate_totals(frm) {
-    let total = 0;
-    (frm.doc.items || []).forEach(row => {
-        total += row.amount || 0;
-    });
-    
-    let discount = total * (frm.doc.discount_percentage || 0) / 100;
-    frm.set_value('grand_total', total - discount);
+    let total = (frm.doc.items || []).reduce(
+        (sum, row) => sum + flt(row.amount), 0);
+    frm.set_value('grand_total', flt(total, 2));
 }
 ```
 
-### Workflow 4: Fetching Server Data
+**Rules**:
+- ALWAYS use `flt()` for numeric operations (handles null/undefined)
+- ALWAYS handle `items_remove` — totals must recalculate on row deletion
+- NEVER call `refresh_field` after `set_value` — it triggers automatically
 
-**Scenario**: Populate customer details on customer selection.
+## Workflow 6: Server Calls — Which Method to Use
+
+```
+NEED TO CALL THE SERVER?
+├── Fetch a single value?
+│   └── frappe.db.get_value(doctype, name, fields)
+│       Returns: Promise — lightweight, no whitelist needed
+│
+├── Call a document's controller method?
+│   └── frm.call(method, args)
+│       Requires: @frappe.whitelist() on controller method
+│       Auto-includes: doctype, docname, doc context
+│
+├── Call a standalone whitelisted function?
+│   └── frappe.call({method: 'dotted.path', args: {}})
+│       Requires: @frappe.whitelist() decorator
+│       Returns: Promise with r.message
+│
+└── Need Promise-only (no callback)?
+    └── frappe.xcall('dotted.path', args)
+        Same as frappe.call but returns clean Promise
+```
+
+**Example — frm.call**:
+```javascript
+frm.call('calculate_taxes').then(r => {
+    frm.reload_doc();  // Refresh after server-side changes
+});
+```
+
+**Example — frappe.xcall**:
+```javascript
+let result = await frappe.xcall(
+    'myapp.api.check_credit', { customer: frm.doc.customer });
+```
+
+## Workflow 7: Custom Button Implementation
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
-    async customer(frm) {
-        if (!frm.doc.customer) {
-            // Clear fields if customer cleared
-            frm.set_value({
-                customer_name: '',
-                territory: '',
-                credit_limit: 0
-            });
-            return;
-        }
-        
-        // Fetch customer details
-        let r = await frappe.db.get_value('Customer', 
-            frm.doc.customer, 
-            ['customer_name', 'territory', 'credit_limit']
-        );
-        
-        if (r.message) {
-            frm.set_value({
-                customer_name: r.message.customer_name,
-                territory: r.message.territory,
-                credit_limit: r.message.credit_limit
-            });
+    refresh(frm) {
+        // ALWAYS check conditions before adding buttons
+        if (!frm.is_new() && frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('Create Invoice'), () => {
+                create_invoice(frm);
+            }, __('Create'));  // Group label
         }
     }
 });
 ```
 
-### Workflow 5: Validation with Server Check
+**Rules**:
+- ALWAYS add buttons in `refresh` — they are cleared on each render
+- ALWAYS check `frm.is_new()` — buttons on unsaved docs cause errors
+- ALWAYS wrap button labels in `__()` for translation
+- NEVER add buttons in `setup` or `onload` — UI not ready
 
-**Scenario**: Check credit limit before save.
+## Workflow 8: Async Validation with Server Check
 
 ```javascript
 frappe.ui.form.on('Sales Order', {
     async validate(frm) {
-        if (frm.doc.customer && frm.doc.grand_total) {
-            let r = await frappe.call({
-                method: 'myapp.api.check_credit',
-                args: {
-                    customer: frm.doc.customer,
-                    amount: frm.doc.grand_total
-                }
-            });
-            
-            if (r.message && !r.message.allowed) {
-                frappe.throw(__('Credit limit exceeded. Available: {0}', 
-                    [r.message.available]));
+        if (!frm.doc.customer || !frm.doc.grand_total) return;
+
+        let r = await frappe.call({
+            method: 'myapp.api.check_credit',
+            args: {
+                customer: frm.doc.customer,
+                amount: frm.doc.grand_total
             }
+        });
+
+        if (r.message && !r.message.allowed) {
+            frappe.throw(__('Credit limit exceeded. Available: {0}',
+                [r.message.available]));
         }
     }
 });
 ```
 
-→ See [references/workflows.md](references/workflows.md) for more workflow patterns.
+**Rules**:
+- ALWAYS use `async/await` for server calls in `validate`
+- ALWAYS use `frappe.throw()` to stop save — `msgprint` does NOT stop it
+- NEVER put slow server calls in `validate` without user expectation
 
-## Integration Matrix
+## Workflow 9: Debugging in Browser
 
-| Client Script Action | Requires Server-side |
-|----------------------|----------------------|
-| Link filters | Optional: custom query |
-| Fetch server data | `frappe.db.*` or whitelisted method |
-| Call document method | `@frappe.whitelist()` in controller |
-| Complex validation | Server Script or controller validation |
-| Create document | `frappe.db.insert` or whitelisted method |
+1. Open **F12 DevTools > Console**
+2. Add `console.log(frm.doc)` in your event handler
+3. Use `cur_frm` in Console to inspect current form state
+4. Check **Network** tab for failed `frappe.call` requests
+5. Use `frappe.ui.form.handlers` to see registered event handlers
 
-### Client + Server Combination
-
+**Debug pattern**:
 ```javascript
-// CLIENT: frm.call invokes controller method
-frm.call('calculate_taxes')
-    .then(() => frm.reload_doc());
-
-// SERVER (controller): MUST have @frappe.whitelist
-class SalesInvoice(Document):
-    @frappe.whitelist()
-    def calculate_taxes(self):
-        # complex calculation
-        self.tax_amount = self.grand_total * 0.21
-        self.save()
+frappe.ui.form.on('MyDocType', {
+    my_field(frm) {
+        console.log('Field changed:', frm.doc.my_field);
+        // ... actual logic
+    }
+});
 ```
 
-## Checklist: Implementation Steps
+## Workflow 10: Migrate Client Script to Custom App
 
-### New Client Script Feature
+1. Create JS file: `myapp/myapp/public/js/sales_order.js`
+2. Move script content to the file (keep `frappe.ui.form.on` wrapper)
+3. Register in `hooks.py`:
+   ```python
+   doctype_js = {
+       "Sales Order": "public/js/sales_order.js"
+   }
+   ```
+4. Run `bench build` (or `bench watch` for development)
+5. Delete the Client Script document from Setup
+6. Test on the form — behavior must be identical
 
-1. **[ ] Determine scope**
-   - UI/UX only? → Client script only
-   - Data integrity? → Also server validation
+**ALWAYS migrate when**: version control needed, multi-environment deployment, script > 50 lines, team collaboration required.
 
-2. **[ ] Choose events**
-   - Use decision tree above
-   - Combine refresh + fieldname for visibility
-
-3. **[ ] Implement basics**
-   - Start with `frappe.ui.form.on`
-   - Test with console.log first
-
-4. **[ ] Add error handling**
-   - `try/catch` around async calls
-   - `frappe.throw` for validation errors
-
-5. **[ ] Test edge cases**
-   - New document (frm.is_new())
-   - Empty field (null checks)
-   - Child table empty/filled
-
-6. **[ ] Translate strings**
-   - All UI text in `__()`
-
-## Critical Rules
+## Performance Rules
 
 | Rule | Why |
 |------|-----|
-| `refresh_field()` after child table change | UI synchronization |
-| `set_query` in `setup` event | Consistent filter behavior |
-| `frappe.throw()` for validation, not `msgprint` | Stops save action |
-| Async/await for server calls | Prevent race conditions |
-| Check `frm.is_new()` for buttons | Prevent errors on new doc |
+| `set_query` in `setup` only | Prevents re-registration on every refresh |
+| Batch `set_value` calls | `frm.set_value({a: 1, b: 2})` — one update, not two |
+| Cache server responses | Store in `frm._cache_key` to avoid repeat calls |
+| NEVER query in loops | Fetch all data once, build lookup map |
+| Use `frappe.db.get_value` | Lighter than `frappe.call` for simple lookups |
 
 ## Related Skills
 
-- `frappe-syntax-clientscripts` — Exact syntax and method signatures
-- `frappe-errors-clientscripts` — Error handling patterns
-- `frappe-syntax-whitelisted` — Server methods for frm.call
-- `frappe-core-database` — frappe.db.* client-side API
+- `frappe-syntax-clientscripts` — Exact API syntax and method signatures
+- `frappe-errors-clientscripts` — Error handling and common pitfalls
+- `frappe-syntax-whitelisted` — Server methods callable from client
+- `frappe-core-database` — `frappe.db.*` client-side API
+- `frappe-impl-serverscripts` — When to move logic server-side
 
-→ See [references/examples.md](references/examples.md) for 10+ complete implementation examples.
+> See [references/decision-tree.md](references/decision-tree.md) for event selection.
+> See [references/workflows.md](references/workflows.md) for extended patterns.
+> See [references/examples.md](references/examples.md) for 10+ complete examples.
