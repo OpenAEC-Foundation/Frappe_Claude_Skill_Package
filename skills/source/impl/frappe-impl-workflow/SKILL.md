@@ -16,7 +16,7 @@ metadata:
 
 Step-by-step guide for implementing document workflows in Frappe. Covers design, setup, testing, and common approval chain patterns.
 
-## Quick Reference — Implementation Checklist
+## Quick Reference: Implementation Checklist
 
 ```
 1. □ Design states and transitions on paper/diagram first

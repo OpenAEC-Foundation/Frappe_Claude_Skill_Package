@@ -19,7 +19,7 @@ Configuration hooks in hooks.py enable custom apps to extend Frappe/ERPNext
 behavior. This skill covers ALL non-document-event hooks. For `doc_events`
 (validate, on_submit, on_update, etc.), see **frappe-syntax-hooks-events**.
 
-## Quick Reference — Hook Categories
+## Quick Reference: Hook Categories
 
 | Category | Key Hooks | Reference |
 |----------|-----------|-----------|
@@ -42,7 +42,7 @@ behavior. This skill covers ALL non-document-event hooks. For `doc_events`
 
 ---
 
-## Decision Tree — Which Hook Do I Need?
+## Decision Tree: Which Hook Do I Need?
 
 ```
 What do you want to achieve?

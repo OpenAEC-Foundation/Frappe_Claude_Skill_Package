@@ -84,7 +84,7 @@ Map each business requirement to Frappe mechanisms:
 
 ## Step 2: App Boundary Decision Framework
 
-### Single App — Use When
+### Single App: Use When
 
 - Total DocTypes < 15
 - Single team maintains the code
@@ -92,7 +92,7 @@ Map each business requirement to Frappe mechanisms:
 - No plans to distribute/sell components separately
 - All DocTypes have tight data dependencies
 
-### Multiple Apps — Use When
+### Multiple Apps: Use When
 
 - Total DocTypes > 15
 - Multiple teams with separate release cycles

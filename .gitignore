@@ -45,3 +45,4 @@ build/
 
 # NOTE: .skill files are NOT ignored - they are our deliverables!
 # If you need to ignore local/draft skills, put them in a drafts/ folder
+SKILLS_LOG.md

@@ -133,7 +133,7 @@ frappe.web_form.on("after_submit", function() {
 });
 ```
 
-### Web Form Custom Script (Server — Python)
+### Web Form Custom Script (Server: Python)
 
 In the Web Form document, add a Python script:
 
@@ -251,7 +251,7 @@ update_website_context = "myapp.overrides.website_context"
 base_template = "myapp/templates/custom_base.html"
 ```
 
-## Workflow 7: SEO — Meta Tags, Open Graph & Sitemap
+## Workflow 7: SEO: Meta Tags, Open Graph & Sitemap
 
 ### In portal pages (frontmatter or context)
 

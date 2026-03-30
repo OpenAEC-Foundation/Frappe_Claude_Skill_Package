@@ -20,7 +20,7 @@ Complete guide for upgrading Frappe/ERPNext between major versions, handling fai
 
 ---
 
-## Quick Reference — Upgrade Commands
+## Quick Reference: Upgrade Commands
 
 | Task | Command |
 |------|---------|
@@ -283,11 +283,11 @@ bench start  # or: sudo bench restart (production)
 
 ---
 
-## Frappe Packages — Moving Customizations Between Sites
+## Frappe Packages: Moving Customizations Between Sites
 
 Frappe Packages (v14+) are lightweight UI-built applications — bundles of Custom Module Defs distributed as `.tar.gz` tarballs. For Custom Fields, Property Setters, and DocPerms on standard DocTypes, use **Fixtures** instead.
 
-### Quick Reference — Package vs Fixtures vs App
+### Quick Reference: Package vs Fixtures vs App
 
 | Mechanism | Use When | CLI Command |
 |-----------|----------|-------------|

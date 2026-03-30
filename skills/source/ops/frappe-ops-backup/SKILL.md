@@ -94,7 +94,7 @@ What do you need to back up?
 
 ---
 
-## bench backup — All Options
+## bench backup: All Options
 
 ```bash
 bench backup [OPTIONS]
@@ -121,7 +121,7 @@ bench backup [OPTIONS]
 
 ---
 
-## bench restore — All Options
+## bench restore: All Options
 
 ```bash
 bench --site [site-name] restore [OPTIONS] SQL_FILE_PATH

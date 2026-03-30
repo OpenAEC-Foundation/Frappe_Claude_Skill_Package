@@ -49,7 +49,7 @@ Need to test a function or method in isolation?
 
 ## Test Base Classes
 
-### FrappeTestCase (v14 — still works in v15+ as compatibility wrapper)
+### FrappeTestCase (v14: still works in v15+ as compatibility wrapper)
 
 ```python
 from frappe.tests.utils import FrappeTestCase
@@ -63,7 +63,7 @@ class TestMyDoctype(FrappeTestCase):
 
 **Behavior**: Resets `frappe.local.flags` after each test. Database transactions start before each test and rollback afterward. ALWAYS call `super().setUpClass()` if you override `setUpClass`.
 
-### UnitTestCase (v15+) — No Database Access
+### UnitTestCase (v15+): No Database Access
 
 ```python
 from frappe.tests.classes import UnitTestCase
@@ -80,7 +80,7 @@ class TestMyUtils(UnitTestCase):
 
 **Behavior**: Sets `frappe.set_user("Administrator")` in `setUpClass`. Auto-detects doctype from module path. Provides `normalize_html()`, `normalize_sql()`, `assertDocumentEqual()`, `assertQueryEqual()`, `assertSequenceSubset()`.
 
-### IntegrationTestCase (v15+) — Full Database Access
+### IntegrationTestCase (v15+): Full Database Access
 
 ```python
 from frappe.tests.classes import IntegrationTestCase

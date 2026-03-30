@@ -140,7 +140,7 @@ function calculate_totals(frm) {
 - ALWAYS handle `items_remove` — totals must recalculate on row deletion
 - NEVER call `refresh_field` after `set_value` — it triggers automatically
 
-## Workflow 6: Server Calls — Which Method to Use
+## Workflow 6: Server Calls: Which Method to Use
 
 ```
 NEED TO CALL THE SERVER?

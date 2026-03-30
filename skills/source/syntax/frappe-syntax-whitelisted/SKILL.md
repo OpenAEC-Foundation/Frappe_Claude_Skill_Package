@@ -178,7 +178,7 @@ Full details: [parameter-handling.md](references/parameter-handling.md)
 
 ## Client Calls
 
-### frappe.call() — Standalone APIs
+### frappe.call(): Standalone APIs
 
 ```javascript
 // Promise-based (ALWAYS prefer this)
@@ -194,7 +194,7 @@ frappe.call({
 });
 ```
 
-### frm.call() — Controller Methods
+### frm.call(): Controller Methods
 
 ```javascript
 frm.call('calculate_taxes', { include_shipping: true })

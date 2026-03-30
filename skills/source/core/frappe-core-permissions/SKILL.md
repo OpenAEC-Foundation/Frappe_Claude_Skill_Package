@@ -224,7 +224,7 @@ Grant `mask` permission to roles that MUST see unmasked values:
 
 ## Permission Hooks
 
-### has_permission — Custom Deny Logic
+### has_permission: Custom Deny Logic
 
 Can only **deny** access. NEVER returns `True` to grant. ALWAYS returns `None` to continue standard checks.
 
@@ -244,7 +244,7 @@ def check_order_permission(doc, ptype, user):
     return None  # ALWAYS return None by default
 ```
 
-### permission_query_conditions — Filter List Queries
+### permission_query_conditions: Filter List Queries
 
 Returns SQL WHERE clause fragment. Only affects `get_list()`, NOT `get_all()`.
 

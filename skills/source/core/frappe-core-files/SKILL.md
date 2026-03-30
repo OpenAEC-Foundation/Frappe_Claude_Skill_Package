@@ -57,7 +57,7 @@ What file operation do you need?
 
 ---
 
-## File DocType — Core Fields
+## File DocType: Core Fields
 
 | Field | Type | Description |
 |-------|------|-------------|

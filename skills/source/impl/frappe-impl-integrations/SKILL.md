@@ -51,7 +51,7 @@ WHAT ARE YOU INTEGRATING?
 
 ---
 
-## Workflow 1: OAuth 2.0 — Frappe as Provider
+## Workflow 1: OAuth 2.0: Frappe as Provider
 
 Use when external applications need "Sign in with Frappe" or API access on behalf of users.
 
@@ -103,7 +103,7 @@ scopes = openid all
 
 ---
 
-## Workflow 2: Connected App — Frappe as OAuth Consumer
+## Workflow 2: Connected App: Frappe as OAuth Consumer
 
 Use when your Frappe instance needs to access external services (Google, Microsoft, etc.) on behalf of users.
 
@@ -153,7 +153,7 @@ response = session.get("https://www.googleapis.com/gmail/v1/users/me/messages")
 
 ---
 
-## Workflow 3: Webhooks — Push Notifications to External Services
+## Workflow 3: Webhooks: Push Notifications to External Services
 
 ### Step 1: Create Webhook DocType
 
@@ -176,7 +176,7 @@ Authorization: Bearer <api_token>
 Content-Type: application/json
 ```
 
-### Step 3: Configure Data — Choose Format
+### Step 3: Configure Data: Choose Format
 
 **Form URL-encoded**: Select specific fields from a table.
 

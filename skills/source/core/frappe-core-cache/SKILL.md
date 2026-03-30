@@ -188,7 +188,7 @@ def get_exchange_rate(from_currency, to_currency):
 
 ---
 
-## frappe.local.cache — Request-Scoped Cache
+## frappe.local.cache: Request-Scoped Cache
 
 `frappe.local.cache` is a plain Python dict that lives for the duration of a single HTTP request. It is NOT stored in Redis.
 

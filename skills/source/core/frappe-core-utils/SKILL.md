@@ -16,7 +16,7 @@ metadata:
 
 # Frappe Utility Functions
 
-## Quick Reference — Python
+## Quick Reference: Python
 
 | Need | Function | Returns |
 |------|----------|---------|
@@ -51,7 +51,7 @@ metadata:
 
 ---
 
-## Decision Tree — "Which function do I use?"
+## Decision Tree: "Which function do I use?"
 
 ```
 Need a date/time value?

@@ -20,7 +20,7 @@ Complete bench CLI reference for site management, app lifecycle, configuration, 
 
 ---
 
-## Quick Reference — Essential Commands
+## Quick Reference: Essential Commands
 
 | Task | Command |
 |------|---------|
@@ -160,7 +160,7 @@ bench include-app custom_app
 
 ---
 
-## Workflow 4: bench update — What It Does
+## Workflow 4: bench update: What It Does
 
 ```bash
 # Full update (pull + migrate + build + restart)

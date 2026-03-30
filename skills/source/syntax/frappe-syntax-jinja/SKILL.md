@@ -120,7 +120,7 @@ Need a printable document?
 
 ## Essential Methods (Whitelisted in Jinja)
 
-### Formatting — ALWAYS Use for Display
+### Formatting: ALWAYS Use for Display
 
 ```jinja
 {# ALWAYS use get_formatted() for fields in Print Formats #}
@@ -160,7 +160,7 @@ Need a printable document?
     fields=["name", "grand_total"]) %}
 ```
 
-### Translation — REQUIRED for All User-Facing Strings
+### Translation: REQUIRED for All User-Facing Strings
 
 ```jinja
 <h1>{{ _("Invoice") }}</h1>

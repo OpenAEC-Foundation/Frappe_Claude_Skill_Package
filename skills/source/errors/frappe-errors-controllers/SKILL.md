@@ -106,7 +106,7 @@ class CustomDoc(Document):
 
 **Autoname options**: `naming_series`, `field:fieldname`, `format:PREFIX-{fieldname}-.####`, `hash`, `Prompt`, or custom `autoname()` method.
 
-### 2. Validate Loop — self.save() in Hooks
+### 2. Validate Loop: self.save() in Hooks
 
 ```python
 # ❌ WRONG — Infinite recursion
@@ -144,7 +144,7 @@ class MyDoc(Document):
 # Then before_submit and on_submit hooks work
 ```
 
-### 4. Wrong Lifecycle Hook — Error Timing
+### 4. Wrong Lifecycle Hook: Error Timing
 
 ```python
 # ❌ WRONG — Validation in on_submit (document already submitted!)
@@ -278,7 +278,7 @@ class Territory(NestedSet):
 
 ---
 
-## on_cancel — Isolate Cleanup Operations
+## on_cancel: Isolate Cleanup Operations
 
 ```python
 # ❌ WRONG — First failure stops all cleanup

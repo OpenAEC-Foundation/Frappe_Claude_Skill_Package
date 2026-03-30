@@ -45,7 +45,7 @@ Cross-ref: `frappe-syntax-hooks` (syntax), `frappe-impl-hooks` (workflows), `fra
 
 ## Hook Registration Errors
 
-### Hook Not Firing — Diagnosis Checklist
+### Hook Not Firing: Diagnosis Checklist
 
 ```
 IS YOUR HOOK NOT FIRING?
@@ -260,7 +260,7 @@ def on_update(doc, method=None):
 
 ## Permission Hook Errors
 
-### permission_query_conditions — NEVER Throw
+### permission_query_conditions: NEVER Throw
 
 ```python
 # ❌ BREAKS list view entirely
@@ -283,7 +283,7 @@ def query_conditions(user):
 
 **Note**: permission_query_conditions only affects `frappe.db.get_list()`, NOT `frappe.db.get_all()`.
 
-### has_permission — NEVER Throw
+### has_permission: NEVER Throw
 
 ```python
 # ❌ BREAKS document access
@@ -307,7 +307,7 @@ def has_permission(doc, user=None, permission_type=None):
 
 ## Override & Extend Errors
 
-### override_doctype_class — Import Failures
+### override_doctype_class: Import Failures
 
 ```python
 # ❌ COMMON: Import path changes between ERPNext versions
@@ -334,7 +334,7 @@ class CustomSalesInvoice(SalesInvoice):
 
 **Warning**: Only ONE app's override_doctype_class is active per DocType ("last writer wins"). Use extend_doctype_class [v16+] for multi-app compatibility.
 
-### extend_doctype_class [v16+] — Conflicts
+### extend_doctype_class [v16+]: Conflicts
 
 ```python
 # hooks.py

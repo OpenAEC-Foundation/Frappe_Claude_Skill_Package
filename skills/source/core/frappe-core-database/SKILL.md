@@ -78,7 +78,7 @@ What do you need?
 
 ---
 
-## ORM — Document Operations
+## ORM: Document Operations
 
 ### Get Document
 ```python
@@ -145,7 +145,7 @@ doc.insert(
 
 ---
 
-## Database API — Reading
+## Database API: Reading
 
 ### get_value
 ```python
@@ -229,7 +229,7 @@ or_filters = {'priority': 'Urgent', 'status': 'Overdue'}
 
 ---
 
-## Database API — Writing
+## Database API: Writing
 
 ### set_value
 ```python
@@ -262,7 +262,7 @@ frappe.db.bulk_update('Task', {
 
 ---
 
-## Raw SQL — ALWAYS Parameterized
+## Raw SQL: ALWAYS Parameterized
 
 ```python
 # ✅ CORRECT — parameterized query
@@ -484,7 +484,7 @@ sql = qb_obj.get_sql()
 
 ---
 
-## Query Builder — Dedicated Skill
+## Query Builder: Dedicated Skill
 
 For complex queries (joins, aggregations, subqueries, cross-DB compatibility), see **[frappe-syntax-query-builder](../../syntax/frappe-syntax-query-builder/SKILL.md)**.
 - **frappe.db methods** (this skill) — Simple CRUD, get_value, get_list, exists checks

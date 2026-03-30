@@ -104,7 +104,7 @@ result = (
 
 ---
 
-## get_value Returns None — Not an Exception
+## get_value Returns None: Not an Exception
 
 ```python
 # ❌ DANGEROUS — get_value returns None, not raises

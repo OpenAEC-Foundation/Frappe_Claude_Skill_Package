@@ -75,7 +75,7 @@ Permission error occurred
 
 ## Permission Hook Errors
 
-### has_permission Hook — NEVER Throw
+### has_permission Hook: NEVER Throw
 
 ```python
 # hooks.py
@@ -124,7 +124,7 @@ def sales_order_has_permission(doc, user, permission_type):
 - ALWAYS check for `Administrator` and `System Manager` at the top.
 - NEVER call `frappe.throw()` inside this hook.
 
-### permission_query_conditions — NEVER Throw
+### permission_query_conditions: NEVER Throw
 
 ```python
 # hooks.py
@@ -170,7 +170,7 @@ def sales_order_query(user):
 
 ## User Permission Errors
 
-### Too Restrictive — Records Disappear
+### Too Restrictive: Records Disappear
 
 ```
 Error: User can't see any Sales Orders despite having Sales User role.
@@ -201,7 +201,7 @@ perms = get_doc_permissions(frappe.get_doc("Sales Order", "SO-001"), "john@examp
 - Use the `applicable_for` field [v14+] to limit which DocType a User Permission applies to.
 - Uncheck "Apply User Permissions" on the role permission row if blanket filtering is unwanted.
 
-### Too Permissive — User Sees Everything
+### Too Permissive: User Sees Everything
 
 ```
 Error: User Permission set for Territory = "North" but user sees all territories.

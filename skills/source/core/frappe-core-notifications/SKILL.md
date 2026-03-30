@@ -134,7 +134,7 @@ Set **Attach Print** to include a PDF of the document. Select a **Print Format**
 
 ---
 
-## frappe.sendmail() — Programmatic Email
+## frappe.sendmail(): Programmatic Email
 
 ```python
 frappe.sendmail(
@@ -172,7 +172,7 @@ pending = frappe.get_all("Email Queue", filters={"status": "Not Sent"}, limit=10
 
 ---
 
-## frappe.publish_realtime() — System Notifications
+## frappe.publish_realtime(): System Notifications
 
 ```python
 frappe.publish_realtime(

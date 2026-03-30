@@ -73,7 +73,7 @@ WHAT DO YOU NEED?
 
 > See [references/decision-tree.md](references/decision-tree.md) for complete decision tree.
 
-## Workflow 3: Document Event — Validation
+## Workflow 3: Document Event: Validation
 
 **Goal**: Validate Sales Order before save.
 
@@ -105,7 +105,7 @@ if errors:
 - NEVER call `doc.save()` in Before Save — framework handles it
 - ALWAYS use `frappe.throw()` — `msgprint` does NOT stop save
 
-## Workflow 4: Document Event — Auto-Calculate
+## Workflow 4: Document Event: Auto-Calculate
 
 **Goal**: Auto-calculate totals and set derived fields.
 
@@ -125,7 +125,7 @@ if doc.supplier and not doc.supplier_name:
 
 **Rule**: ALWAYS modify `doc` fields directly in Before Save — they are automatically persisted.
 
-## Workflow 5: Document Event — Create Related Document
+## Workflow 5: Document Event: Create Related Document
 
 **Goal**: Create a ToDo when a new Lead is inserted.
 

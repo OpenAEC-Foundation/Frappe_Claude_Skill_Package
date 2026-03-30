@@ -101,7 +101,7 @@ Session cookies expire after ~3 days. NEVER use for long-running integrations.
 
 ---
 
-## REST API — Resource CRUD
+## REST API: Resource CRUD
 
 ### Endpoints
 
@@ -202,7 +202,7 @@ requests.post(f'{base_url}/api/method/upload_file',
 
 ---
 
-## RPC API — Custom Methods
+## RPC API: Custom Methods
 
 ### Server-Side Endpoint
 

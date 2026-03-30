@@ -154,7 +154,7 @@ if not doc.customer:
 
 ## Sandbox Workarounds
 
-### try/except Is Blocked — Use Conditional Checks
+### try/except Is Blocked: Use Conditional Checks
 
 ```python
 # ❌ BLOCKED in sandbox
@@ -169,7 +169,7 @@ if not frappe.db.exists("Customer", doc.customer):
 customer = frappe.get_doc("Customer", doc.customer)
 ```
 
-### raise Is Blocked — Use frappe.throw()
+### raise Is Blocked: Use frappe.throw()
 
 ```python
 # ❌ BLOCKED
@@ -203,7 +203,7 @@ if not frappe.has_permission("Customer", "read", customer):
 
 ---
 
-## Scheduler Script — Critical Mistakes
+## Scheduler Script: Critical Mistakes
 
 ```python
 # ❌ WRONG — No limit, no commit, no error logging

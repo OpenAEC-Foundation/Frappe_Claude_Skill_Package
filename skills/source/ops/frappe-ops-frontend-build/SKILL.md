@@ -20,7 +20,7 @@ Complete reference for Frappe's frontend asset bundling pipeline, from build con
 
 ---
 
-## Quick Reference — Build Commands
+## Quick Reference: Build Commands
 
 | Task | Command |
 |------|---------|
@@ -50,7 +50,7 @@ Which build system?
 
 ## Build Pipeline Overview
 
-### v15+ (esbuild) — Current System
+### v15+ (esbuild): Current System
 
 The v15+ build system uses esbuild for fast ES module bundling. It automatically discovers bundle entry points by scanning the `public/` directory for files matching `*.bundle.{js|ts|css|scss|sass|less|styl}`.
 
@@ -71,7 +71,7 @@ The v15+ build system uses esbuild for fast ES module bundling. It automatically
 - `.less` — Less stylesheets
 - `.styl` — Stylus stylesheets
 
-### v14 (build.json) — Legacy System
+### v14 (build.json): Legacy System
 
 The v14 system uses `build.json` in the app root to define concatenation rules.
 

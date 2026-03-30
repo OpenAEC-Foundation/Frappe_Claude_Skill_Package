@@ -67,7 +67,7 @@ ERROR IN CLIENT SCRIPT
 
 ## Critical Error Patterns
 
-### 1. cur_frm vs frm — The #1 Beginner Mistake
+### 1. cur_frm vs frm: The #1 Beginner Mistake
 
 ```javascript
 // ❌ WRONG — cur_frm is undefined in many contexts
@@ -87,7 +87,7 @@ frappe.ui.form.on('Sales Order', {
 
 **Rule**: NEVER use `cur_frm`. ALWAYS use the `frm` parameter passed to every event handler.
 
-### 2. Async/Await — Silent Failure Without try/catch
+### 2. Async/Await: Silent Failure Without try/catch
 
 ```javascript
 // ❌ WRONG — Unhandled rejection crashes silently
@@ -124,7 +124,7 @@ frappe.ui.form.on('Sales Order', {
 });
 ```
 
-### 3. Child Table Access — Wrong Pattern
+### 3. Child Table Access: Wrong Pattern
 
 ```javascript
 // ❌ WRONG — frm.doc.items[0] may not reflect latest state
@@ -145,7 +145,7 @@ frappe.ui.form.on('Sales Order Item', {
 });
 ```
 
-### 4. Timing — setup vs refresh
+### 4. Timing: setup vs refresh
 
 ```javascript
 // ❌ WRONG — set_value in setup, form not ready
@@ -170,7 +170,7 @@ frappe.ui.form.on('Sales Order', {
 });
 ```
 
-### 5. frappe.throw() Scope — Only Works in validate
+### 5. frappe.throw() Scope: Only Works in validate
 
 ```javascript
 // ❌ WRONG — throw in customer change does NOT prevent save

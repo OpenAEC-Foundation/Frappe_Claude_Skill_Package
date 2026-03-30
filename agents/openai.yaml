@@ -1,0 +1,5 @@
+# OpenAI Codex skill discovery
+name: frappe-claude-skill-package
+description: >
+  60 deterministic Claude AI skills for Frappe Framework & ERPNext v14-v16 development and operations
+skills_directory: ./skills/source

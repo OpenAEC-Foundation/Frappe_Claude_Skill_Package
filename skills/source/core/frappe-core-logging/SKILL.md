@@ -59,7 +59,7 @@ Need to log something?
 
 ---
 
-## Quick Reference — frappe.logger()
+## Quick Reference: frappe.logger()
 
 ```python
 # Get a logger for your module (ALWAYS specify module name)
@@ -100,7 +100,7 @@ frappe.utils.logger.set_log_level("DEBUG")
 
 ---
 
-## Quick Reference — frappe.log_error()
+## Quick Reference: frappe.log_error()
 
 ```python
 # ALWAYS use keyword arguments (title/message can swap otherwise)

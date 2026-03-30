@@ -18,7 +18,7 @@ Complete reference for Frappe Cloud managed hosting and Press self-hosted altern
 
 ---
 
-## Quick Reference — Frappe Cloud Concepts
+## Quick Reference: Frappe Cloud Concepts
 
 | Concept | Description |
 |---------|-------------|

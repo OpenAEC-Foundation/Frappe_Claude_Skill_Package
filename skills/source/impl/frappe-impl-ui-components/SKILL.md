@@ -144,7 +144,7 @@ d.show();
 
 ## Workflow 2: Messages & Alerts
 
-### frappe.msgprint — Modal Message
+### frappe.msgprint: Modal Message
 
 ```javascript
 // Simple message
@@ -170,7 +170,7 @@ frappe.msgprint({
 });
 ```
 
-### frappe.throw — Error with Exception
+### frappe.throw: Error with Exception
 
 ```javascript
 // Client-side: shows msgprint and stops execution
@@ -185,7 +185,7 @@ frappe.throw("Not Permitted", frappe.PermissionError)  # specific exception
 
 **Rule**: ALWAYS use `frappe.throw` for validation errors. NEVER use `frappe.msgprint` for errors — it does not stop execution.
 
-### frappe.confirm — Yes/No Dialog
+### frappe.confirm: Yes/No Dialog
 
 ```javascript
 frappe.confirm(
@@ -195,7 +195,7 @@ frappe.confirm(
 );
 ```
 
-### frappe.prompt — Quick Single-Field Input
+### frappe.prompt: Quick Single-Field Input
 
 ```javascript
 frappe.prompt(
@@ -215,7 +215,7 @@ frappe.prompt([
 ], (values) => { console.log(values); }, "Details");
 ```
 
-### frappe.show_alert — Toast Notification
+### frappe.show_alert: Toast Notification
 
 ```javascript
 // Simple

@@ -14,7 +14,7 @@ metadata:
 
 # Document Lifecycle Hooks (doc_events)
 
-## Quick Reference — Event Execution Order
+## Quick Reference: Event Execution Order
 
 ### Insert (new document)
 
@@ -81,7 +81,7 @@ metadata:
 
 ---
 
-## doc_events in hooks.py — Syntax
+## doc_events in hooks.py: Syntax
 
 ### Basic Structure
 
@@ -98,7 +98,7 @@ doc_events = {
 }
 ```
 
-### Wildcard — Apply to ALL DocTypes
+### Wildcard: Apply to ALL DocTypes
 
 ```python
 doc_events = {
@@ -141,7 +141,7 @@ ALWAYS accept `method` as the second parameter (with default `None`). Frappe pas
 
 ---
 
-## Decision Tree — Which Event to Use
+## Decision Tree: Which Event to Use
 
 ### "I need to validate data before saving"
 → Use `validate`. ALWAYS raise `frappe.throw()` here to block invalid saves.
