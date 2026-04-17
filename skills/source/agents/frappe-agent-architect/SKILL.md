@@ -1,10 +1,6 @@
 ---
 name: frappe-agent-architect
-description: >
-  Use when designing multi-app Frappe architectures, deciding whether to split functionality into separate apps, or implementing cross-app communication patterns.
-  Prevents monolithic app sprawl, circular dependencies between apps, and broken override chains.
-  Covers multi-app architecture decisions, app dependency management, cross-app hooks, override patterns, when to split vs extend, shared DocType strategies.
-  Keywords: architecture, multi-app, app splitting, cross-app, dependencies, override, extend, monolith, modular, how to structure frappe apps, when to split apps, app design, multi-app planning..
+description: "Use when designing multi-app Frappe architectures, deciding whether to split functionality into separate apps, or implementing cross-app communication patterns. Prevents monolithic app sprawl, circular dependencies between apps, and broken override chains. Covers multi-app architecture decisions, app dependency management, cross-app hooks, override patterns, when to split vs extend, shared DocType strategies. Keywords: architecture, multi-app, app splitting, cross-app, dependencies, override, extend, monolith, modular, how to structure frappe apps, when to split apps, app design, multi-app planning."
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -20,50 +16,21 @@ Designs Frappe/ERPNext multi-app architectures by analyzing business requirement
 
 ## When to Use This Agent
 
-```
-ARCHITECTURE TRIGGER
-|
-+-- New project with multiple modules
-|   "We need CRM, inventory, and custom billing"
-|   --> USE THIS AGENT
-|
-+-- Deciding whether to extend ERPNext or build custom
-|   "Should we customize Sales Invoice or create our own DocType?"
-|   --> USE THIS AGENT
-|
-+-- Multiple teams building on same Frappe instance
-|   "Team A does HR, Team B does manufacturing"
-|   --> USE THIS AGENT
-|
-+-- Existing monolith needs splitting
-|   "Our single custom app has 50 DocTypes"
-|   --> USE THIS AGENT
-|
-+-- Cross-app communication needed
-|   "App A needs to react when App B creates a document"
-|   --> USE THIS AGENT
-```
+- New project with multiple modules ("We need CRM, inventory, and custom billing")
+- Deciding whether to extend ERPNext or build custom DocTypes
+- Multiple teams building on the same Frappe instance with separate domains
+- Existing monolith needs splitting (single app with 50+ DocTypes)
+- Cross-app communication needed (App A reacts when App B creates a document)
 
 ## Architecture Workflow
 
-```
-STEP 1: ANALYZE REQUIREMENTS
-  Business needs → DocTypes, workflows, integrations
-
-STEP 2: DECIDE APP BOUNDARIES
-  Single app vs multiple apps decision framework
-
-STEP 3: DESIGN CROSS-APP DEPENDENCIES
-  required_apps, shared DocTypes, hook contracts
-
-STEP 4: DESIGN DATA MODEL
-  DocTypes, relationships, naming conventions
-
-STEP 5: GENERATE IMPLEMENTATION ROADMAP
-  Build order, milestones, team assignments
-```
-
-See [references/workflow.md](references/workflow.md) for detailed steps.
+1. **Analyze Requirements** — Map business needs to DocTypes, workflows, integrations
+2. **Decide App Boundaries** — Single app vs multiple apps decision framework
+3. **Design Cross-App Dependencies** — Define `required_apps`, shared DocTypes, hook contracts
+   - **Checkpoint:** Validate dependency graph has no circular references
+4. **Design Data Model** — DocTypes, relationships, naming conventions
+5. **Generate Implementation Roadmap** — Build order, milestones, team assignments
+   - **Checkpoint:** Review against Common Architecture Mistakes table before finalizing
 
 ## Step 1: Requirement Analysis Matrix
 
@@ -119,8 +86,6 @@ HOW MANY DOCTYPES?
 |       Group by domain/team/release cycle
 ```
 
-See [references/decision-tree.md](references/decision-tree.md) for the complete decision framework.
-
 ## Step 3: Cross-App Dependency Patterns
 
 ### required_apps Declaration
@@ -161,6 +126,65 @@ RULE: Dependencies flow DOWN only. Never up, never sideways.
 | **Custom Fields** | `fixtures` with Custom Field | Extend another app's DocType without modifying it |
 | **Override** | `extend_doctype_class` (v16) or `doc_events` | Modify another app's behavior |
 | **Signals** | `frappe.publish_realtime()` | Real-time notifications between apps |
+
+#### Hook Events Example
+
+```python
+# custom_crm/hooks.py — React when erpnext creates a Sales Invoice
+doc_events = {
+    "Sales Invoice": {
+        "on_submit": "custom_crm.events.sales_invoice.on_submit"
+    }
+}
+```
+
+```python
+# custom_crm/events/sales_invoice.py
+import frappe
+
+def on_submit(doc, method):
+    """Update CRM deal status when invoice is submitted."""
+    if doc.crm_deal:
+        deal = frappe.get_doc("CRM Deal", doc.crm_deal)
+        deal.status = "Won"
+        deal.save(ignore_permissions=True)
+```
+
+#### Custom Fields via Fixtures Example
+
+```python
+# custom_crm/hooks.py
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [["module", "=", "Custom CRM"]]
+    }
+]
+```
+
+#### extend_doctype_class Override (v16+)
+
+```python
+# custom_manufacturing/overrides/production_plan.py
+import frappe
+from erpnext.manufacturing.doctype.production_plan.production_plan import ProductionPlan
+
+class CustomProductionPlan(ProductionPlan):
+    def validate(self):
+        super().validate()
+        self.validate_custom_capacity()
+
+    def validate_custom_capacity(self):
+        if self.total_planned_qty > 10000:
+            frappe.throw("Production plan exceeds plant capacity of 10,000 units")
+```
+
+```python
+# custom_manufacturing/hooks.py
+override_doctype_class = {
+    "Production Plan": "custom_manufacturing.overrides.production_plan.CustomProductionPlan"
+}
+```
 
 ## Step 4: Data Model Design
 
@@ -317,5 +341,3 @@ ALWAYS produce architecture output in this format:
 - `frappe-impl-customapp`: App development workflow
 ```
 
-See [references/decision-tree.md](references/decision-tree.md) for complete decision frameworks.
-See [references/examples.md](references/examples.md) for architecture design examples.

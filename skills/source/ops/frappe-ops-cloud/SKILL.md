@@ -1,10 +1,6 @@
 ---
 name: frappe-ops-cloud
-description: >
-  Use when working with Frappe Cloud, Press API, provisioning sites, or managing benches on Frappe Cloud infrastructure.
-  Prevents failed deployments from misconfigured cloud settings and API misuse.
-  Covers Frappe Cloud dashboard, Press API, site provisioning, bench management, environment variables, cloud-specific limitations.
-  Keywords: Frappe Cloud, Press, cloud API, site provisioning, bench management, FC, frappecloud, Frappe Cloud deploy, FC hosting, cloud setup, managed hosting..
+description: "Use when working with Frappe Cloud, Press API, provisioning sites, or managing benches on Frappe Cloud infrastructure. Prevents failed deployments from misconfigured cloud settings and API misuse. Covers Frappe Cloud dashboard, Press API, site provisioning, bench management, environment variables, cloud-specific limitations. Keywords: Frappe Cloud, Press, cloud API, site provisioning, bench management, FC, frappecloud, Frappe Cloud deploy, FC hosting, cloud setup, managed hosting."
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -72,44 +68,11 @@ Frappe Cloud is a fully managed hosting platform for the Frappe stack. It handle
 
 ### Infrastructure Options
 
-| Option | Use Case |
-|--------|----------|
-| **Shared Bench** | Cost-effective for small sites; Frappe manages the bench |
-| **Private Bench** | Dedicated environment; custom app versions and update schedules |
-| **Dedicated Server** | Full server for high-traffic or compliance requirements |
-
----
-
-## Frappe Cloud Dashboard
-
-### Site Management
-
-The dashboard provides centralized control for all site operations:
-
-- **Create sites** — Provision new sites on shared or private benches
-- **Install/remove apps** — Add or remove Frappe apps from sites
-- **Backups** — Manual and scheduled backups, restore from backup
-- **Domain management** — Add custom domains with automatic SSL
-- **Site config** — Edit `site_config.json` via the dashboard
-- **Monitoring** — View CPU, memory, disk usage, and request logs
-- **Site actions** — Migrate, update, suspend, archive, or transfer sites
-
-### Bench Management
-
-- **Create benches** — Set up shared or private benches
-- **App management** — Select apps and their versions/branches
-- **Update scheduling** — Control when benches receive updates
-- **Environment variables** — Set custom environment variables
-- **SSH access** — Connect to bench via SSH for debugging
-- **Log browser** — View application and error logs
-- **Database access** — Query the database via the dashboard
-
-### Server Management
-
-- **Provision servers** — Create servers across multiple cloud providers
-- **Scale resources** — Upgrade CPU, memory, and storage
-- **Storage add-ons** — Attach additional storage volumes
-- **Server snapshots** — Create and restore server snapshots
+| Option | Use Case | SSH | Env Vars | Update Control |
+|--------|----------|-----|----------|----------------|
+| **Shared Bench** | Small sites, cost-effective | No | No (use site_config) | Frappe-managed |
+| **Private Bench** | Custom apps, dedicated resources | Yes | Yes | Owner-controlled |
+| **Dedicated Server** | High-traffic, compliance | Yes | Yes | Owner-controlled |
 
 ---
 
@@ -122,16 +85,6 @@ The dashboard provides centralized control for all site operations:
 3. Select the branch to deploy
 4. Configure build settings if needed
 5. The app becomes available for installation on sites within compatible benches
-
-### App Marketplace
-
-Frappe Cloud includes a marketplace where developers can:
-
-- List apps with descriptions and pricing
-- Set compatibility requirements (Frappe version, dependencies)
-- Configure pricing models (free, one-time, subscription)
-- Manage payouts for commercial apps
-- Track installations and usage analytics
 
 ### Deployment Workflow
 
@@ -159,18 +112,48 @@ Developer pushes code → Frappe Cloud detects update →
 
 ### Custom Domain Setup
 
+ALWAYS use CNAME records — NEVER use A records (IPs change during infrastructure migrations):
+
+```dns
+; CORRECT — survives Frappe Cloud infrastructure changes
+erp.example.com.  CNAME  mysite.frappe.cloud.
+
+; WRONG — breaks when Frappe Cloud migrates servers
+erp.example.com.  A  123.45.67.89
+```
+
+**Steps:**
 1. Navigate to site **Domains** in the dashboard
 2. Add your custom domain (e.g., `erp.example.com`)
 3. Configure DNS: Add a **CNAME** record pointing to the Frappe Cloud proxy
 4. Frappe Cloud verifies DNS and provisions SSL certificate automatically
 5. **ALWAYS** wait for DNS propagation before expecting SSL to work (up to 48 hours)
+6. **ALWAYS** verify SSL is active before switching production traffic
 
-### Critical Rules
+---
 
-- **ALWAYS** use CNAME records for custom domains (not A records)
-- **NEVER** transfer DNS to Frappe Cloud — only add CNAME records
-- **ALWAYS** verify SSL is active before switching production traffic
-- Custom domain SSL uses Let's Encrypt — auto-renews before expiry
+## Frappe Cloud API
+
+Frappe Cloud exposes a REST API for programmatic site management via Press:
+
+```bash
+# List all sites
+curl -H "Authorization: token api_key:api_secret" \
+  https://frappecloud.com/api/method/press.api.site.all
+
+# Get site details
+curl -H "Authorization: token api_key:api_secret" \
+  https://frappecloud.com/api/method/press.api.site.get \
+  -d "name=mysite.frappe.cloud"
+
+# Trigger a backup
+curl -X POST \
+  -H "Authorization: token api_key:api_secret" \
+  https://frappecloud.com/api/method/press.api.site.backup \
+  -d "name=mysite.frappe.cloud"
+```
+
+**ALWAYS** check the latest Frappe Cloud documentation for current API endpoints — they may change between releases.
 
 ---
 
@@ -212,16 +195,6 @@ Press is the open-source platform (AGPL-3.0) that powers Frappe Cloud. Organizat
 | Ansible | Automation | Server provisioning and configuration |
 | Frappe UI | Vue.js | Dashboard frontend |
 
-### Key Capabilities
-
-- **Multi-server management** — Provision and manage multiple servers
-- **Site lifecycle** — Create, update, migrate, backup, restore, archive sites
-- **Bench management** — Deploy benches with specific app versions
-- **Billing system** — Subscriptions, invoicing, wallet credits, ERP integration
-- **Marketplace** — App listing, pricing, payouts
-- **Role-based access** — Granular permissions per team and resource
-- **Monitoring** — Real-time metrics and alerting
-
 ### When to Self-Host Press
 
 - You need to host Frappe for multiple clients/tenants
@@ -255,20 +228,15 @@ Press is the open-source platform (AGPL-3.0) that powers Frappe Cloud. Organizat
 - Run long-running background processes outside Frappe's job queue
 - Use non-standard ports or protocols
 
-### Shared Bench Limitations
+### Shared vs Private Bench Capabilities
 
-- No SSH access
-- No custom environment variables (use site_config.json instead)
-- Shared resources with other sites — performance may vary
-- Update schedule controlled by Frappe (not the site owner)
-
-### Private Bench Advantages Over Shared
-
-- SSH access for debugging
-- Custom environment variables
-- Controlled update schedule
-- Dedicated resources
-- Custom app versions and branches
+| Capability | Shared Bench | Private Bench |
+|------------|:------------:|:-------------:|
+| SSH access | No | Yes |
+| Custom environment variables | No | Yes |
+| Update schedule control | No | Yes |
+| Dedicated resources | No | Yes |
+| Custom app versions/branches | No | Yes |
 
 ---
 
@@ -280,17 +248,35 @@ Press is the open-source platform (AGPL-3.0) that powers Frappe Cloud. Organizat
 - **ALWAYS** use the dashboard for site config changes (not direct file edits)
 - **NEVER** disable scheduler on Frappe Cloud — use `pause_scheduler` instead
 - **ALWAYS** test app updates on a staging site before production
+- **ALWAYS** configure custom domain and verify SSL BEFORE go-live
 
 ### Backup Strategy
+
+```bash
+# On self-hosted: create full backup before migrating to Frappe Cloud
+bench --site mysite backup --with-files
+# Produces: database.sql.gz, files.tar, private-files.tar
+```
 
 - Frappe Cloud creates automatic daily backups
 - **ALWAYS** create a manual backup before major changes
 - **ALWAYS** download and store backups off-platform periodically
 - **NEVER** rely solely on Frappe Cloud backups — maintain your own copies
 
+### Environment Variables (Private Bench Only)
+
+```
+# Set via Dashboard: Benches → Your Private Bench → Configuration → Environment Variables
+STRIPE_SECRET_KEY=sk_live_xxx
+SENTRY_DSN=https://xxx@sentry.io/123
+CUSTOM_API_ENDPOINT=https://api.example.com
+```
+
+**For shared benches**: ALWAYS use `site_config.json` via the dashboard instead — environment variables are not available on shared benches.
+
 ### Performance
 
-- Monitor site usage via the dashboard — upgrade plan before hitting limits
+- Monitor site usage via the dashboard — upgrade plan BEFORE hitting limits
 - Use background jobs for heavy operations (not synchronous API calls)
 - Enable Redis caching for frequently accessed data
 - Review slow query logs via the database analyzer tool
@@ -307,13 +293,17 @@ Press is the open-source platform (AGPL-3.0) that powers Frappe Cloud. Organizat
 | **SSH Access** | Terminal access to private benches for debugging |
 | **Process Status** | View running workers, scheduler status, job queue |
 
-### Analytics Integrations
+### SSH Debugging (Private Bench Only)
 
-Frappe Cloud sites can connect to external analytics tools:
-- Frappe Insights (native)
-- Power BI (via API)
-- Metabase (via database connection)
-- Custom dashboards (via Frappe API)
+```bash
+# Connect to your private bench
+ssh frappe@your-bench-server.frappe.cloud
+
+# Open Frappe console for a specific site
+cd frappe-bench
+bench --site yoursite console
+>>> frappe.get_doc("Error Log", {"error": ("like", "%specific error%")})
+```
 
 ---
 
@@ -321,5 +311,5 @@ Frappe Cloud sites can connect to external analytics tools:
 
 | File | Contents |
 |------|----------|
-| [examples.md](references/examples.md) | Cloud deployment workflow examples |
-| [anti-patterns.md](references/anti-patterns.md) | Common Frappe Cloud mistakes and fixes |
+| [examples.md](references/examples.md) | Cloud deployment workflow examples, staging workflows, migration guides |
+| [anti-patterns.md](references/anti-patterns.md) | Common Frappe Cloud mistakes and fixes (10 anti-patterns) |

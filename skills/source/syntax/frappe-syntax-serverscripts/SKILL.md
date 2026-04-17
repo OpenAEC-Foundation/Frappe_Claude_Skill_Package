@@ -1,13 +1,6 @@
 ---
 name: frappe-syntax-serverscripts
-description: >
-  Use when writing Python code for ERPNext/Frappe Server Scripts including
-  Document Events, API endpoints, Scheduler Events, and Permission Queries.
-  Prevents the #1 AI mistake: using import statements in Server Scripts
-  (sandbox blocks ALL imports). Covers frappe.* methods, event name mapping,
-  and correct v14/v15/v16 syntax. Keywords: Server Script, frappe, ERPNext,
-  sandbox, import, doc event, validate, on_submit, before_save,
-  server script example, import not allowed, sandbox rules, which script type to use.
+description: "Use when writing Python code for ERPNext/Frappe Server Scripts including Document Events, API endpoints, Scheduler Events, and Permission Queries. Prevents the #1 AI mistake: using import statements in Server Scripts (sandbox blocks ALL imports). Covers frappe.* methods, event name mapping, and correct v14/v15/v16 syntax. Keywords: Server Script, frappe, ERPNext, sandbox, import, doc event, validate, on_submit, before_save, server script example, import not allowed, sandbox rules, which script type to use."
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -126,92 +119,61 @@ frappe.form_dict            # Request parameters (API scripts)
 frappe.response             # Response object (API scripts)
 frappe.request              # Werkzeug request object
 frappe.qb                   # Query Builder (v14+)
-json                        # Python json module (pre-loaded)
+json                        # Auto-injected by sandbox (no import needed)
 ```
 
-### Core Methods
+### Most-Used Methods (Quick Reference)
 
 ```python
 # Documents
 frappe.get_doc(doctype, name)           # Fetch document
 frappe.new_doc(doctype)                 # Create new document
-frappe.get_cached_doc(doctype, name)    # Cached fetch (read-only)
-frappe.get_last_doc(doctype)            # Most recent document
-frappe.get_mapped_doc(...)              # Map fields between DocTypes
-frappe.delete_doc(doctype, name)        # Delete document
-frappe.rename_doc(doctype, old, new)    # Rename document
-
-# Querying
 frappe.get_all(doctype, filters, fields, order_by, limit)   # No permission check
-frappe.get_list(doctype, filters, fields, order_by, limit)  # With permission check
 frappe.db.get_value(doctype, name, fieldname)
-frappe.db.get_single_value(doctype, fieldname)
 frappe.db.set_value(doctype, name, fieldname, value)
 frappe.db.exists(doctype, name_or_filters)
-frappe.db.count(doctype, filters)
 frappe.db.sql(query, values, as_dict)   # ALWAYS parameterize!
-frappe.db.escape(value)                 # SQL escape
-frappe.db.commit()                      # ONLY in Scheduler scripts
-frappe.db.rollback()                    # ONLY in Scheduler scripts
 
-# Messaging
+# Messaging & Errors
 frappe.throw(msg, exc, title)           # Stop execution + show error
 frappe.msgprint(msg, title, indicator)  # User notification
 frappe.log_error(message, title)        # Error Log entry
 
-# HTTP (yes, these work in sandbox!)
-frappe.make_get_request(url, params, headers)
-frappe.make_post_request(url, data, headers)
-frappe.make_put_request(url, data, headers)
-
-# Email
-frappe.sendmail(recipients, sender, subject, message)
-
 # Utilities
 frappe.utils.today()                    # "2024-01-15"
-frappe.utils.now()                      # "2024-01-15 10:30:00"
 frappe.utils.now_datetime()             # datetime object
 frappe.utils.add_days(date, n)          # Date arithmetic
-frappe.utils.add_months(date, n)
-frappe.utils.date_diff(d1, d2)          # Days between dates
 frappe.utils.flt(val)                   # Safe float (None → 0.0)
 frappe.utils.cint(val)                  # Safe int (None → 0)
-frappe.utils.cstr(val)                  # Safe string (None → "")
 frappe.parse_json(string)               # JSON string → dict/list
 frappe.as_json(obj)                     # dict/list → JSON string
-frappe.render_template(template, ctx)   # Jinja rendering
-frappe.get_url()                        # Site URL
-frappe.get_hooks(hook)                  # Read app hooks
-run_script(script_name, **kwargs)       # Call another Server Script
-
-# Session / Permissions
-frappe.session.user                     # Current user email
-frappe.get_roles(user)                  # User's roles list
-frappe.has_permission(doctype, ptype, doc)
-frappe.get_fullname(user)               # User's display name
-_("translatable string")               # Translation function
 ```
 
-### Python Builtins Available
+**BLOCKED builtins**: `open`, `eval`, `exec`, `compile`, `__import__`, `globals`, `locals`.
+Standard types (`str`, `int`, `list`, `dict`, etc.), iteration (`range`, `enumerate`, `zip`),
+and aggregation (`sum`, `min`, `max`, `len`, `sorted`) are all available.
+
+See **[references/methods.md](references/methods.md)** for the complete sandbox API reference
+(documents, querying, HTTP, email, session/permissions, and all builtins).
+
+## Creating & Testing Server Scripts
+
+1. **Create**: Go to **Setup > Server Script > + Add Server Script**
+2. **Configure**: Set Script Type, Reference DocType (for Document Events), Event, and API Method name (for API scripts)
+3. **Write**: Enter Python code — remember, **NO imports**
+4. **Test**: Trigger the script by performing the action (save a doc, call the API endpoint, etc.)
+5. **Debug**: Check **Help > Error Log** for sandbox violations — look for `ImportError` or `NameError`
+6. **Iterate**: Fix errors, re-save the Server Script, and re-trigger — changes apply immediately (no bench restart needed)
 
 ```python
-str, int, float, bool, list, dict, tuple, set  # Types
-range, enumerate, zip, map, filter              # Iteration
-sum, min, max, len, sorted, reversed            # Aggregation
-isinstance, type, hasattr, getattr              # Introspection
-all, any, abs, round, divmod                    # Math/logic
-print                                           # → server log
-True, False, None                               # Constants
+# Quick smoke test: add this to any script to verify it runs
+frappe.msgprint("Script executed successfully!")
 ```
 
-### Python Builtins BLOCKED
-
-```python
-open, file          # No file I/O
-eval, exec, compile # No dynamic code execution
-__import__          # No imports (this is the root cause)
-globals, locals     # No scope introspection
-```
+**Common sandbox errors and fixes:**
+- `ImportError: __import__ not found` → Remove the import line, use `frappe.*` equivalent
+- `NameError: name 'X' is not defined` → The variable/module is not available in sandbox
+- Infinite loop on save → You called `doc.save()` inside a Before Save event — remove it
 
 ## Syntax Per Script Type
 

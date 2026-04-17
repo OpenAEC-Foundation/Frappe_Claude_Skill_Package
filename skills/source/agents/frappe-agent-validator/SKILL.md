@@ -1,13 +1,6 @@
 ---
 name: frappe-agent-validator
-description: >
-  Use when reviewing or validating Frappe/ERPNext code against best
-  practices and common pitfalls. Checks generated code before deployment,
-  validates against all 61 frappe-* skills, catches v16 patterns
-  (extend_doctype_class, type annotations), validates ops patterns (bench
-  commands, deployment), and generates correction reports. Keywords: review
-  code, check script, validate deployment, find bugs, code quality,
-  check my code, is this correct, code review, before deploying, best practices check.
+description: "Use when reviewing or validating Frappe/ERPNext code against best practices and common pitfalls. Checks generated code before deployment, validates against all 61 frappe-* skills, catches v16 patterns (extend_doctype_class, type annotations), validates ops patterns (bench commands, deployment), and generates correction reports. Keywords: review code, check script, validate deployment, find bugs, code quality, check my code, is this correct, code review, before deploying, best practices check."
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -21,32 +14,6 @@ Validates Frappe/ERPNext code against the complete 61-skill knowledge base, catc
 
 **Purpose**: Catch errors before deployment, not after
 
-## When to Use This Agent
-
-```
-CODE VALIDATION TRIGGERS
-|
-+-- Code has been generated and needs review
-|   "Check this Server Script before I save it"
-|   --> USE THIS AGENT
-|
-+-- Code is causing errors
-|   "Why isn't this working?"
-|   --> USE THIS AGENT
-|
-+-- Pre-deployment validation
-|   "Is this production-ready?"
-|   --> USE THIS AGENT
-|
-+-- Code review for best practices
-|   "Can this be improved?"
-|   --> USE THIS AGENT
-|
-+-- Ops/deployment validation
-|   "Is my bench setup correct?"
-|   --> USE THIS AGENT
-```
-
 ## Validation Workflow
 
 ```
@@ -56,18 +23,21 @@ STEP 1: IDENTIFY CODE TYPE
 
 STEP 2: RUN TYPE-SPECIFIC CHECKS
   Apply checklist for identified code type
+  → If CRITICAL errors found: generate corrected code, then re-run from Step 1
 
 STEP 3: CHECK UNIVERSAL RULES
   Error handling | Security | Performance | User feedback
 
 STEP 4: VERIFY VERSION COMPATIBILITY
   v14/v15/v16 features | Deprecated patterns
+  → If version-incompatible patterns found: flag and provide version-safe alternative
 
 STEP 5: VALIDATE AGAINST SKILL CATALOG
   Cross-reference with relevant frappe-* skills
 
 STEP 6: GENERATE VALIDATION REPORT
   Critical errors | Warnings | Suggestions | Corrected code
+  → If any CRITICAL/FATAL: corrected code is REQUIRED in report
 ```
 
 See [references/workflow.md](references/workflow.md) for detailed steps.
@@ -164,6 +134,13 @@ def process_order(order_name: str, action: str = "approve") -> dict:
 ```python
 # Validate: sensitive fields should use data masking
 # Check if PII fields have mask_with configured in DocType JSON
+# Example: DocType JSON field definition for masked phone number
+{
+    "fieldname": "phone",
+    "fieldtype": "Data",
+    "options": "Phone",
+    "mask_with": "X"  # Displays as "XXXXXXX1234" to unauthorized users
+}
 ```
 
 ## Universal Validation Rules
@@ -242,64 +219,46 @@ ALWAYS generate reports in this format:
 | Standard | + Warnings + Security | Pre-deployment (DEFAULT) |
 | Deep | + Suggestions + Performance + Ops | Production review |
 
-## Skill Catalog Cross-Reference
+See [references/skill-catalog.md](references/skill-catalog.md) for the full 61-skill cross-reference catalog.
+See [references/checklists.md](references/checklists.md) for quick-check summaries per code type.
 
-This validator validates against ALL 61 frappe-* skills:
+## Example: End-to-End Validation
 
-### Syntax Validation (11 skills)
-`frappe-syntax-clientscripts`, `frappe-syntax-serverscripts`, `frappe-syntax-controllers`, `frappe-syntax-hooks`, `frappe-syntax-hooks-events`, `frappe-syntax-whitelisted`, `frappe-syntax-jinja`, `frappe-syntax-scheduler`, `frappe-syntax-customapp`, `frappe-syntax-doctypes`, `frappe-syntax-reports`
+Given this Server Script:
 
-### Implementation Validation (12 skills)
-`frappe-impl-clientscripts`, `frappe-impl-serverscripts`, `frappe-impl-controllers`, `frappe-impl-hooks`, `frappe-impl-whitelisted`, `frappe-impl-jinja`, `frappe-impl-scheduler`, `frappe-impl-customapp`, `frappe-impl-reports`, `frappe-impl-workflow`, `frappe-impl-website`, `frappe-impl-ui-components`, `frappe-impl-integrations`
+```python
+# Server Script: before_save on Sales Invoice
+import json
+try:
+    total = self.grand_total
+    if total > 100000:
+        frappe.throw("Amount too high")
+except:
+    pass
+```
 
-### Error Pattern Validation (7 skills)
-`frappe-errors-clientscripts`, `frappe-errors-serverscripts`, `frappe-errors-controllers`, `frappe-errors-hooks`, `frappe-errors-api`, `frappe-errors-permissions`, `frappe-errors-database`
+The validator produces:
 
-### Core Pattern Validation (7 skills)
-`frappe-core-database`, `frappe-core-permissions`, `frappe-core-api`, `frappe-core-workflow`, `frappe-core-notifications`, `frappe-core-files`, `frappe-core-cache`
+```markdown
+### CRITICAL ERRORS (Must Fix)
+| # | Line | Issue | Fix |
+|---|------|-------|-----|
+| 1 | 2 | `import json` — imports are forbidden in Server Scripts | Remove import; use `frappe.parse_json()` instead |
+| 2 | 4 | `self.grand_total` — wrong doc variable | Change to `doc.grand_total` |
 
-### Ops Validation (8 skills)
-`frappe-ops-bench`, `frappe-ops-deployment`, `frappe-ops-backup`, `frappe-ops-performance`, `frappe-ops-upgrades`, `frappe-ops-cloud`, `frappe-ops-app-lifecycle`, `frappe-ops-frontend-build`
+### WARNINGS (Should Fix)
+| # | Line | Issue | Recommendation |
+|---|------|-------|----------------|
+| 1 | 3-6 | `try/except: pass` silences errors | Remove try/except; use `frappe.throw()` for validation |
+```
 
-### Testing Validation (2 skills)
-`frappe-testing-unit`, `frappe-testing-cicd`
+Corrected code:
 
-## Quick Validation Commands
-
-### Server Script: 5-point check
-1. Any `import` statements? --> FATAL
-2. Any `self.` references? --> FATAL (use `doc.`)
-3. Any `try/except`? --> WARNING (usually wrong)
-4. Uses `frappe.throw()` for validation? --> GOOD
-5. Uses `doc.field` for access? --> GOOD
-
-### Client Script: 5-point check
-1. Any `frappe.db.*` calls? --> FATAL
-2. Any `frappe.get_doc()` calls? --> FATAL
-3. `frappe.call()` without callback? --> FATAL
-4. Uses `frm.doc.field` for access? --> GOOD
-5. Uses `frm.refresh_field()` after changes? --> GOOD
-
-### Controller: 5-point check
-1. Modifying `self.*` in `on_update`? --> FATAL
-2. Missing `super().method()` calls? --> ERROR
-3. `self.save()` in lifecycle hook? --> FATAL
-4. Imports at top of file? --> GOOD
-5. Error handling for external calls? --> GOOD
-
-### hooks.py: 5-point check
-1. Valid Python syntax? --> Check
-2. Function paths exist? --> Check
-3. v16-only hooks marked? --> Check
-4. required_apps complete? --> Check
-5. Fixture filters present? --> Check
-
-### Bench/Ops: 5-point check
-1. `bench migrate` after changes? --> REQUIRED
-2. Backup before destructive ops? --> REQUIRED
-3. Scheduler enabled? --> Check
-4. Workers running? --> Check
-5. SSL configured (production)? --> Check
+```python
+# Server Script: before_save on Sales Invoice
+if doc.grand_total and doc.grand_total > 100000:
+    frappe.throw("Amount exceeds approval threshold of 100,000")
+```
 
 See [references/checklists.md](references/checklists.md) for complete checklists.
 See [references/examples.md](references/examples.md) for validation examples.

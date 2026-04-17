@@ -1,10 +1,6 @@
 ---
 name: frappe-core-workflow
-description: >
-  Use when creating or modifying Frappe Workflows, defining states and transitions, adding action conditions, or troubleshooting workflow permission errors.
-  Prevents stuck documents from misconfigured transitions, missing state permissions, and circular workflow paths.
-  Covers Workflow DocType, workflow states, transitions, actions, conditions (Python expressions), workflow permissions, workflow_state field, Workflow Action DocType.
-  Keywords: workflow, states, transitions, actions, conditions, workflow_state, Workflow Action, approval, document workflow, approval process, document stuck, cannot change status, workflow not moving, who can approve..
+description: "Use when creating or modifying Frappe Workflows, defining states and transitions, adding action conditions, or troubleshooting workflow permission errors. Prevents stuck documents from misconfigured transitions, missing state permissions, and circular workflow paths. Covers Workflow DocType, workflow states, transitions, actions, conditions (Python expressions), workflow permissions, workflow_state field, Workflow Action DocType. Keywords: workflow, states, transitions, actions, conditions, workflow_state, Workflow Action, approval, document workflow, approval process, document stuck, cannot change status, workflow not moving, who can approve."
 license: MIT
 compatibility: "Claude Code, Claude.ai Projects, Claude API. Frappe v14-v16."
 metadata:
@@ -82,6 +78,25 @@ When `apply_workflow(doc, action)` is called:
 8. Handle docstatus change based on source/target state `doc_status` values
 9. Save/Submit/Cancel document accordingly
 10. Add workflow comment
+
+### Apply a Workflow Transition (Code Example)
+
+```python
+# ALWAYS use apply_workflow() to change workflow state — NEVER set workflow_state directly
+from frappe.model.workflow import apply_workflow
+
+doc = frappe.get_doc("Leave Application", "LA-00001")
+apply_workflow(doc, "Approve")  # action must match a Workflow Action Master name
+
+# To check available actions for the current user before applying:
+from frappe.model.workflow import get_transitions
+transitions = get_transitions(doc)
+# Returns list of dicts: [{"action": "Approve", "next_state": "Approved", ...}]
+
+# WRONG — NEVER do this on workflow-controlled documents:
+# doc.workflow_state = "Approved"  # Bypasses validation, permissions, and side effects
+# doc.save()
+```
 
 ## Workflow and DocStatus Interaction
 
